@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from app.main import app
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import User, Task
+from app.models import User, Task, ScheduleBlock
 from tests.conftest import engine
 
 TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -43,8 +43,9 @@ def setup_tasks_overrides():
 
     yield
 
-    # Teardown
+    # Teardown — order matters: blocks → tasks → user (foreign keys)
     db = TestingSession()
+    db.query(ScheduleBlock).filter(ScheduleBlock.user_id == TASKS_USER_ID).delete()
     db.query(Task).filter(Task.user_id == TASKS_USER_ID).delete()
     db.query(User).filter(User.id == TASKS_USER_ID).delete()
     db.commit()

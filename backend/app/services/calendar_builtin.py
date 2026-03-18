@@ -1,0 +1,45 @@
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
+from app.services.scheduler import FreeSlot
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+    import uuid
+
+
+def get_builtin_free_slots(
+    user_id: "uuid.UUID",
+    date: datetime,
+    study_start: int = 9,
+    study_end: int = 22,
+    db: "Session" = None,
+) -> list[FreeSlot]:
+    """Find free time blocks using the built-in calendar (no Google)."""
+    day_start = date.replace(hour=study_start, minute=0, second=0, microsecond=0)
+    day_end = date.replace(hour=study_end, minute=0, second=0, microsecond=0)
+
+    if db is None:
+        return [FreeSlot(start=day_start, end=day_end)]
+
+    from app.models import CalendarEvent
+    events = (
+        db.query(CalendarEvent)
+        .filter(
+            CalendarEvent.user_id == user_id,
+            CalendarEvent.start_time < day_end,
+            CalendarEvent.end_time > day_start,
+        )
+        .order_by(CalendarEvent.start_time)
+        .all()
+    )
+
+    free = []
+    cursor = day_start
+    for e in events:
+        if cursor < e.start_time:
+            free.append(FreeSlot(start=cursor, end=e.start_time))
+        cursor = max(cursor, e.end_time)
+    if cursor < day_end:
+        free.append(FreeSlot(start=cursor, end=day_end))
+
+    return free

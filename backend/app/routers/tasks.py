@@ -10,6 +10,7 @@ from app.schemas.tasks import (
 )
 from app.services.ai_parser import parse_brain_dump
 from app.services.matrix_scorer import score_task, TaskInput
+from app.services.schedule_runner import run_schedule_for_user
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -67,6 +68,8 @@ async def brain_dump(
         db.commit()
         db.refresh(task)
         created.append(task)
+    # Trigger scheduler after all tasks saved
+    run_schedule_for_user(user, db)
     return BrainDumpResponse(tasks=created)
 
 
