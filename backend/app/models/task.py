@@ -24,7 +24,7 @@ class Task(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    user = relationship("User", back_populates="tasks")
+    user = relationship("User", back_populates="tasks", foreign_keys=[user_id])
     schedule_blocks = relationship("ScheduleBlock", back_populates="task")
     subtasks = relationship("Task", backref="parent", remote_side="Task.id")
     productivity_logs = relationship("ProductivityLog", back_populates="task")
