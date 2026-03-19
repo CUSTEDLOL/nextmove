@@ -99,7 +99,7 @@ def _create_task(user_id, title="Test task", priority=5.0, parent_id=None):
 # Helper to run async functions in tests
 # ---------------------------------------------------------------------------
 def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------

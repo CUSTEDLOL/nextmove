@@ -69,7 +69,7 @@ async def process_dump_for_chat_id(chat_id: int, text: str) -> Optional[list]:
         if not user:
             return None
         parsed = await parse_brain_dump(text, user_timezone=user.timezone)
-        created = []
+        tasks_to_add = []
         for p in parsed:
             deadline = datetime.fromisoformat(p.deadline) if p.deadline else None
             task = Task(
@@ -82,33 +82,44 @@ async def process_dump_for_chat_id(chat_id: int, text: str) -> Optional[list]:
                 context=p.context,
                 status="pending",
             )
+            tasks_to_add.append((task, p))
+
+        # Add all tasks, flush to get IDs (no commit yet)
+        for task, p in tasks_to_add:
             db.add(task)
-            db.commit()
-            db.refresh(task)
+        db.flush()  # assigns IDs without committing
+
+        # Score and add steps
+        for task, p in tasks_to_add:
             task.priority_index = score_task(TaskInput(
                 deadline=task.deadline,
                 effort=task.effort or "medium",
                 importance=task.importance or 3,
                 dependency_count=0,
             ))
-            db.commit()
-            db.refresh(task)
             for step_title in p.steps:
                 step = Task(
                     user_id=user.id,
                     title=step_title,
                     parent_task_id=task.id,
-                    deadline=deadline,
-                    effort=p.effort,
-                    importance=p.importance,
-                    context=p.context,
+                    deadline=task.deadline,
+                    effort=task.effort,
+                    importance=task.importance,
+                    context=task.context,
                     status="pending",
                 )
                 db.add(step)
-            if p.steps:
-                db.commit()
+
+        db.commit()  # single atomic commit
+
+        created = []
+        for task, _ in tasks_to_add:
+            db.refresh(task)
             created.append(TaskResponse.model_validate(task))
         return created
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -143,7 +154,7 @@ async def add_steps_for_chat_id(chat_id: int, task_id: str, text: str) -> Option
         raw = text.replace("\n", ",")
         titles = [s.strip().lstrip("-•*").strip() for s in raw.split(",")]
         titles = [t for t in titles if len(t) > 1]
-        created = []
+        steps = []
         for title in titles:
             step = Task(
                 user_id=user.id,
@@ -156,10 +167,12 @@ async def add_steps_for_chat_id(chat_id: int, task_id: str, text: str) -> Option
                 status="pending",
             )
             db.add(step)
-            db.commit()
-            db.refresh(step)
-            created.append(step.title)
-        return created
+            steps.append(step)
+        db.commit()
+        return [s.title for s in steps]
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -195,6 +208,46 @@ async def get_pending_steps_task_id(chat_id: int) -> Optional[uuid.UUID]:
         db.close()
 
 
+def _generate_why(task: Task) -> str:
+    reasons = []
+
+    if task.deadline:
+        now = datetime.utcnow()
+        days = (task.deadline - now).days
+        if days < 0:
+            reasons.append(f"it's already overdue by {abs(days)} day{'s' if abs(days) != 1 else ''}")
+        elif days == 0:
+            reasons.append("it's due today")
+        elif days == 1:
+            reasons.append("it's due tomorrow")
+        elif days <= 3:
+            reasons.append(f"it's due in {days} days")
+        elif days <= 7:
+            reasons.append(f"it's due this week ({task.deadline.strftime('%A')})")
+        else:
+            reasons.append(f"it's due {task.deadline.strftime('%b %d')}")
+    else:
+        reasons.append("it has no deadline but has been waiting")
+
+    importance = task.importance or 3
+    if importance >= 5:
+        reasons.append("you marked it as critically important")
+    elif importance >= 4:
+        reasons.append("you rated it high importance")
+    elif importance <= 2:
+        reasons.append("it's lower importance but still needs doing")
+
+    effort = task.effort or "medium"
+    if effort == "high":
+        reasons.append("it's a heavy task that needs focus — best tackled now while your energy is fresh")
+    elif effort == "low":
+        reasons.append("it's a quick win that'll clear your head")
+
+    title = task.title
+    reasons_str = ", and ".join(reasons) if len(reasons) <= 2 else ", ".join(reasons[:-1]) + ", and " + reasons[-1]
+    return f"'{title}' is your top priority because {reasons_str}."
+
+
 async def why_task_for_chat_id(chat_id: int, task_id: str) -> Optional[str]:
     db = SessionLocal()
     try:
@@ -204,7 +257,6 @@ async def why_task_for_chat_id(chat_id: int, task_id: str) -> Optional[str]:
         task = db.query(Task).filter(Task.id == task_id, Task.user_id == user.id).first()
         if not task:
             return None
-        from app.routers.tasks import _generate_why
         return _generate_why(task)
     finally:
         db.close()

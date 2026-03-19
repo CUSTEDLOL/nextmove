@@ -48,3 +48,11 @@ async def test_gpt_fallback_unclear(monkeypatch):
     from app.telegram.intent import classify_intent
     result = await classify_intent("haha nice", has_pending_steps=False)
     assert result == "unclear"
+
+@pytest.mark.asyncio
+async def test_steps_reply_overrides_keyword_match():
+    from app.telegram.intent import classify_intent
+    # "done" would normally match _COMPLETE, but has_pending_steps=True overrides it
+    assert await classify_intent("done", has_pending_steps=True) == "steps_reply"
+    # "today" would normally match _TODAY
+    assert await classify_intent("what should I do today", has_pending_steps=True) == "steps_reply"

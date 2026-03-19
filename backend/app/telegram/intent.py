@@ -6,6 +6,15 @@ _COMPLETE = ["done", "finished", "completed", "submitted", "wrapped up", "handed
 _SKIP = ["skip", "push", "reschedule", "postpone", "not today", "not doing", "later", "delay"]
 _LIST = ["list", "all tasks", "show tasks", "show me everything", "everything i have", "all my tasks"]
 
+_openai_client: AsyncOpenAI | None = None
+
+
+def _get_openai_client() -> AsyncOpenAI:
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+    return _openai_client
+
 
 async def classify_intent(text: str, has_pending_steps: bool) -> str:
     if has_pending_steps:
@@ -15,10 +24,10 @@ async def classify_intent(text: str, has_pending_steps: bool) -> str:
 
     if any(p in lower for p in _SKIP):
         return "skip"
-    if any(p in lower for p in _TODAY):
-        return "today"
     if any(p in lower for p in _COMPLETE):
         return "complete"
+    if any(p in lower for p in _TODAY):
+        return "today"
     if any(p in lower for p in _LIST):
         return "list"
 
@@ -26,7 +35,7 @@ async def classify_intent(text: str, has_pending_steps: bool) -> str:
 
 
 async def _gpt_classify(text: str) -> str:
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    client = _get_openai_client()
     response = await client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
