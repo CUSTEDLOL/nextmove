@@ -19,7 +19,7 @@ def format_today_message(primary: Optional[TaskResponse], secondary: list[TaskRe
         for i, t in enumerate(secondary, 1):
             lines.append(f"   {i}. {t.title}")
 
-    lines.append("\n_Use /done to mark complete, /dump to add more tasks._")
+    lines.append("\n_Say *done* when finished, or just tell me what else is on your plate._")
     return "\n".join(lines)
 
 
@@ -27,8 +27,9 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.telegram.db_helpers import get_today_for_chat_id
     chat_id = update.effective_chat.id
     result = await get_today_for_chat_id(chat_id)
+    target = update.effective_message
     if result is None:
-        await update.message.reply_text(
+        await target.reply_text(
             "⚠️ You're not linked yet. Visit the web app to connect your Telegram account.",
             parse_mode="Markdown"
         )
@@ -41,5 +42,9 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("✅ Done", callback_data=f"done:{primary.id}"),
             InlineKeyboardButton("⏭️ Skip", callback_data=f"skip:{primary.id}"),
         ])
+        keyboard.append([
+            InlineKeyboardButton("📋 Steps", callback_data=f"steps:{primary.id}"),
+            InlineKeyboardButton("❓ Why?", callback_data=f"why:{primary.id}"),
+        ])
     markup = InlineKeyboardMarkup(keyboard) if keyboard else None
-    await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=markup)
+    await target.reply_text(msg, parse_mode="Markdown", reply_markup=markup)

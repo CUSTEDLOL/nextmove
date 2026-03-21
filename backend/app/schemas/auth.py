@@ -5,6 +5,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     name: str
+    timezone: str = "Asia/Singapore"
 
 
 class LoginRequest(BaseModel):

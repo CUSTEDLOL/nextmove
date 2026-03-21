@@ -22,10 +22,10 @@ async def classify_intent(text: str, has_pending_steps: bool) -> str:
 
     lower = text.lower()
 
-    if any(p in lower for p in _SKIP):
-        return "skip"
     if any(p in lower for p in _COMPLETE):
         return "complete"
+    if any(p in lower for p in _SKIP):
+        return "skip"
     if any(p in lower for p in _TODAY):
         return "today"
     if any(p in lower for p in _LIST):

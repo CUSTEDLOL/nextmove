@@ -27,7 +27,7 @@ async def get_today_for_chat_id(chat_id: int) -> Optional[tuple]:
             .filter(
                 Task.user_id == user.id,
                 Task.status.in_(["pending", "scheduled", "in_progress"]),
-                Task.parent_task_id == None,
+                Task.parent_task_id.is_(None),
             )
             .order_by(Task.priority_index.desc())
             .limit(4)
@@ -51,7 +51,7 @@ async def list_tasks_for_chat_id(chat_id: int) -> Optional[list]:
             .filter(
                 Task.user_id == user.id,
                 Task.status.in_(["pending", "scheduled", "in_progress"]),
-                Task.parent_task_id == None,
+                Task.parent_task_id.is_(None),
             )
             .order_by(Task.priority_index.desc())
             .limit(10)
@@ -290,7 +290,7 @@ async def complete_top_task_for_chat_id(chat_id: int) -> Optional[TaskResponse]:
             .filter(
                 Task.user_id == user.id,
                 Task.status.in_(["pending", "scheduled", "in_progress"]),
-                Task.parent_task_id == None,
+                Task.parent_task_id.is_(None),
             )
             .order_by(Task.priority_index.desc())
             .first()
@@ -333,7 +333,7 @@ async def skip_top_task_for_chat_id(chat_id: int) -> Optional[TaskResponse]:
             .filter(
                 Task.user_id == user.id,
                 Task.status.in_(["pending", "scheduled", "in_progress"]),
-                Task.parent_task_id == None,
+                Task.parent_task_id.is_(None),
             )
             .order_by(Task.priority_index.desc())
             .first()

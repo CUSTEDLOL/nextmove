@@ -15,7 +15,8 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     user = User(
         email=req.email,
         name=req.name,
-        hashed_password=hash_password(req.password)
+        hashed_password=hash_password(req.password),
+        timezone=req.timezone
     )
     db.add(user)
     db.commit()

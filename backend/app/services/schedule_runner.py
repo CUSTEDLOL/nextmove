@@ -55,10 +55,11 @@ def run_schedule_for_user(user: User, db: Session, date: datetime = None) -> lis
 
     scheduled_blocks = build_schedule(tasks_to_schedule, free_slots, study_start, study_end)
 
-    # Clear future blocks (idempotent re-run)
+    # Clear all of today's + future blocks before writing new ones
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     db.query(ScheduleBlock).filter(
         ScheduleBlock.user_id == user.id,
-        ScheduleBlock.start_time >= datetime.utcnow()
+        ScheduleBlock.start_time >= today_start
     ).delete(synchronize_session=False)
 
     task_map = {str(t.id): t for t in tasks}

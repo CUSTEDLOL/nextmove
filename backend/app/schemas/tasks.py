@@ -27,6 +27,10 @@ class TaskResponse(BaseModel):
         from_attributes = True
 
 
+class StepsDumpRequest(BaseModel):
+    text: str
+
+
 class BrainDumpRequest(BaseModel):
     text: str
 

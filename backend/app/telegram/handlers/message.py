@@ -101,8 +101,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif intent == "steps_reply":
         from app.telegram.db_helpers import add_steps_for_chat_id, clear_pending_steps
-        created = await add_steps_for_chat_id(chat_id, str(pending_task_id), text)
-        await clear_pending_steps(chat_id)
+        try:
+            created = await add_steps_for_chat_id(chat_id, str(pending_task_id), text)
+        finally:
+            await clear_pending_steps(chat_id)
         if not created:
             await update.effective_message.reply_text(
                 "🤔 Couldn't parse steps from that. Try: `prepare slides, review notes`"
@@ -125,15 +127,25 @@ async def _handle_email_link(update, email: str, chat_id: int):
         user = db.query(User).filter(User.email == email.strip().lower()).first()
         if not user:
             await update.effective_message.reply_text(
-                "⚠️ No account found with that email. Make sure you've registered at the web app first, then try again."
+                "📬 If that email is registered, your account is now linked. "
+                "If nothing happens, make sure you've signed up at the web app first."
             )
             return
         user.telegram_chat_id = chat_id
         db.commit()
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         await update.effective_message.reply_text(
-            f"✅ Linked! Welcome, *{user.name}*.\n\n"
-            "Just tell me what's on your plate and I'll take it from there.",
-            parse_mode="Markdown"
+            f"📬 If that email is registered, your account is now linked. "
+            "If nothing happens, make sure you've signed up at the web app first."
+        )
+        await update.effective_message.reply_text(
+            f"✅ You're all set, *{user.name}*! What do you want to do?",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎯 Today's task", callback_data="today")],
+                [InlineKeyboardButton("🧠 Brain dump", callback_data="dump")],
+                [InlineKeyboardButton("✅ All tasks", callback_data="tasks")],
+            ])
         )
     finally:
         db.close()
