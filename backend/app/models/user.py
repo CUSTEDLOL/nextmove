@@ -18,6 +18,7 @@ class User(Base):
     google_refresh_token = Column(String, nullable=True)
     telegram_chat_id = Column(BigInteger, nullable=True)
     pending_steps_task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id"), nullable=True)
+    pending_edit_task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id"), nullable=True)
     uses_google_calendar = Column(Boolean, default=False)
     study_start_hour = Column(Integer, default=9)
     study_end_hour = Column(Integer, default=22)
