@@ -10,6 +10,5 @@ async def telegram_webhook(request: Request):
     body = await request.json()
     application = get_application()
     update = Update.de_json(body, application.bot)
-    await application.initialize()
     await application.process_update(update)
     return Response(status_code=200)

@@ -1,37 +1,23 @@
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler,
-    ConversationHandler, CallbackQueryHandler, filters
-)
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from app.config import settings
-from app.telegram.handlers.dump import AWAITING_DUMP
 
-_application = None
+_application: Application | None = None
 
 
 def create_application() -> Application:
     from app.telegram.handlers.start import start_command
-    from app.telegram.handlers.today import today_command
-    from app.telegram.handlers.dump import dump_command, receive_dump, cancel
+    from app.telegram.handlers.message import handle_message
     from app.telegram.handlers.callbacks import handle_callback
+    from app.telegram.handlers.voice import handle_voice
 
     application = Application.builder().token(settings.telegram_bot_token).build()
 
-    # Brain dump conversation: /dump → user sends text → processed
-    dump_conv = ConversationHandler(
-        entry_points=[
-            CommandHandler("dump", dump_command),
-            MessageHandler(filters.Regex(r"(?i)^/dump"), dump_command),
-        ],
-        states={
-            AWAITING_DUMP: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_dump)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
+    # /start is the only command — shows menu for known users, prompts email for new ones
     application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("today", today_command))
-    application.add_handler(dump_conv)
     application.add_handler(CallbackQueryHandler(handle_callback))
+    application.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    # Catch-all text handler — pure conversational routing
+    application.add_handler(MessageHandler(filters.TEXT, handle_message))
 
     return application
 
