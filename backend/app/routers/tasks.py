@@ -94,7 +94,11 @@ def get_today(
 ):
     tasks = (
         db.query(Task)
-        .filter(Task.user_id == user.id, Task.status.in_(["pending", "scheduled", "in_progress"]))
+        .filter(
+            Task.user_id == user.id,
+            Task.parent_task_id.is_(None),
+            Task.status.in_(["pending", "scheduled", "in_progress"])
+        )
         .order_by(Task.priority_index.desc())
         .limit(4)
         .all()
@@ -109,12 +113,15 @@ def list_tasks(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    return (
+    tasks = (
         db.query(Task)
-        .filter(Task.user_id == user.id)
+        .filter(Task.user_id == user.id, Task.parent_task_id.is_(None))
         .order_by(Task.priority_index.desc())
         .all()
     )
+    for task in tasks:
+        task.steps = db.query(Task).filter(Task.parent_task_id == task.id).order_by(Task.created_at).all()
+    return tasks
 
 
 @router.post("/{task_id}/complete", response_model=TaskResponse)

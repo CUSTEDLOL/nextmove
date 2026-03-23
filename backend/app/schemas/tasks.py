@@ -22,9 +22,12 @@ class TaskResponse(BaseModel):
     priority_index: Optional[float]
     status: str
     created_at: datetime
+    steps: list["TaskResponse"] = []
 
     class Config:
         from_attributes = True
+
+TaskResponse.model_rebuild()
 
 
 class StepsDumpRequest(BaseModel):
