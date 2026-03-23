@@ -5,19 +5,29 @@ _application: Application | None = None
 
 
 def create_application() -> Application:
-    from app.telegram.handlers.start import start_command
+    from app.telegram.handlers.commands import (
+        menu_command, today_command, list_command, dump_command,
+        done_command, skip_command, edit_command, web_command,
+    )
     from app.telegram.handlers.message import handle_message
     from app.telegram.handlers.callbacks import handle_callback
     from app.telegram.handlers.voice import handle_voice
+    from app.telegram.handlers.start import start_command
 
     application = Application.builder().token(settings.telegram_bot_token).build()
 
-    # /start is the only command — shows menu for known users, prompts email for new ones
     application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("menu", menu_command))
+    application.add_handler(CommandHandler("today", today_command))
+    application.add_handler(CommandHandler("list", list_command))
+    application.add_handler(CommandHandler("dump", dump_command))
+    application.add_handler(CommandHandler("done", done_command))
+    application.add_handler(CommandHandler("skip", skip_command))
+    application.add_handler(CommandHandler("edit", edit_command))
+    application.add_handler(CommandHandler("web", web_command))
     application.add_handler(CallbackQueryHandler(handle_callback))
     application.add_handler(MessageHandler(filters.VOICE, handle_voice))
-    # Catch-all text handler — pure conversational routing
-    application.add_handler(MessageHandler(filters.TEXT, handle_message))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     return application
 

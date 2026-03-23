@@ -77,3 +77,26 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from app.telegram.db_helpers import why_task_for_chat_id
         explanation = await why_task_for_chat_id(chat_id, task_id)
         await query.answer(explanation or "Couldn't find that task.", show_alert=True)
+
+    elif data.startswith("edit_select:"):
+        task_id = data.split(":", 1)[1]
+        from app.telegram.db_helpers import set_pending_edit
+        from app.database import SessionLocal
+        from app.models import Task
+        db = SessionLocal()
+        try:
+            task = db.query(Task).filter(Task.id == task_id).first()
+            title = task.title if task else "that task"
+        finally:
+            db.close()
+        await set_pending_edit(chat_id, task_id)
+        await query.message.reply_text(
+            f"✏️ Editing: *{title}*\n\n"
+            "What do you want to change?\n"
+            "_e.g. 'deadline is Friday', 'rename to Study for finals', 'delete'_",
+            parse_mode="Markdown",
+        )
+
+    elif data == "edit":
+        from app.telegram.handlers.commands import edit_command
+        await edit_command(update, context)

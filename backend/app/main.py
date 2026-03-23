@@ -15,6 +15,19 @@ async def lifespan(app: FastAPI):
     tg_app = get_application()
     await tg_app.initialize()
 
+    # Register commands in Telegram's autocomplete menu
+    from telegram import BotCommand
+    await tg_app.bot.set_my_commands([
+        BotCommand("menu",  "Show main menu"),
+        BotCommand("today", "Today's priority task"),
+        BotCommand("list",  "All pending tasks"),
+        BotCommand("dump",  "Add new tasks (brain dump)"),
+        BotCommand("done",  "Mark top task complete"),
+        BotCommand("skip",  "Skip top task"),
+        BotCommand("edit",  "Edit or delete a task"),
+        BotCommand("web",   "Open NextMove in browser"),
+    ])
+
     from app.services.pinger import ping_procrastinating_users
     scheduler.add_job(ping_procrastinating_users, "interval", hours=1, id="pinger")
     scheduler.start()

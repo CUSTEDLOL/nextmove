@@ -19,106 +19,85 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = _get_user_by_chat_id(chat_id)
 
+    # Unlinked user — check if they sent their email
     if not user:
         if "@" in text and "." in text:
             await _handle_email_link(update, text, chat_id)
         else:
-            await update.effective_message.reply_text(
-                "👋 Hey! I'm *NextMove* — your personal study planner.\n\n"
+            await update.message.reply_text(
+                "👋 Hey! I'm *NextMove*.\n\n"
                 "To get started, reply with the email you used to register on the web app:",
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
         return
 
-    from app.telegram.db_helpers import get_pending_steps_task_id
-    from app.telegram.intent import classify_intent
+    from app.telegram.db_helpers import get_pending_steps_task_id, get_pending_edit_task_id
 
-    pending_task_id = await get_pending_steps_task_id(chat_id)
-    intent = await classify_intent(text, has_pending_steps=pending_task_id is not None)
-
-    if intent == "today":
-        from app.telegram.handlers.today import today_command
-        await today_command(update, context)
-
-    elif intent == "dump":
-        await update.effective_message.reply_text("⏳ On it...")
-        from app.telegram.db_helpers import process_dump_for_chat_id
-        tasks = await process_dump_for_chat_id(chat_id, text)
-        if not tasks:
-            await update.effective_message.reply_text(
-                "🤔 Hmm, I couldn't pull any tasks from that. "
-                "Try something like: *'I have an essay due Friday and a lab report Monday'*",
-                parse_mode="Markdown"
-            )
-        else:
-            lines = [f"✅ Got it — added {len(tasks)} task{'s' if len(tasks) > 1 else ''}:\n"]
-            for t in tasks:
-                lines.append(f"• {t.title}")
-            lines.append("\nWhat's next? I can show you *today's priority* or just keep going.")
-            await update.effective_message.reply_text(
-                "\n".join(lines),
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🎯 Show today's task", callback_data="today")
-                ]])
-            )
-
-    elif intent == "complete":
-        from app.telegram.db_helpers import complete_top_task_for_chat_id
-        task = await complete_top_task_for_chat_id(chat_id)
-        if task:
-            await update.effective_message.reply_text(
-                f"✅ Marked *{task.title}* as done. Nice work!\n\nSend me what's next on your plate, or ask what to focus on.",
-                parse_mode="Markdown"
-            )
-        else:
-            await update.effective_message.reply_text("🎉 No pending tasks — you're all clear!")
-
-    elif intent == "skip":
-        from app.telegram.db_helpers import skip_top_task_for_chat_id
-        task = await skip_top_task_for_chat_id(chat_id)
-        if task:
-            await update.effective_message.reply_text(
-                f"⏭️ Pushed *{task.title}* aside. It'll come back when the time is right.",
-                parse_mode="Markdown"
-            )
-        else:
-            await update.effective_message.reply_text("Nothing to skip right now.")
-
-    elif intent == "list":
-        from app.telegram.db_helpers import list_tasks_for_chat_id
-        tasks = await list_tasks_for_chat_id(chat_id)
-        if not tasks:
-            await update.effective_message.reply_text(
-                "📭 No tasks yet. Tell me what's on your plate and I'll track it."
-            )
-        else:
-            lines = [f"📋 *Your tasks* ({len(tasks)} pending):\n"]
-            for i, t in enumerate(tasks, 1):
-                deadline_str = f" — due {t.deadline.strftime('%b %d')}" if t.deadline else ""
-                lines.append(f"{i}. {t.title}{deadline_str}")
-            await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
-
-    elif intent == "steps_reply":
+    # Priority 1: waiting for steps input
+    pending_steps = await get_pending_steps_task_id(chat_id)
+    if pending_steps is not None:
         from app.telegram.db_helpers import add_steps_for_chat_id, clear_pending_steps
         try:
-            created = await add_steps_for_chat_id(chat_id, str(pending_task_id), text)
+            created = await add_steps_for_chat_id(chat_id, str(pending_steps), text)
         finally:
             await clear_pending_steps(chat_id)
         if not created:
-            await update.effective_message.reply_text(
-                "🤔 Couldn't parse steps from that. Try: `prepare slides, review notes`"
+            await update.message.reply_text(
+                "🤔 Couldn't parse steps. Try: `prepare slides, review notes`"
             )
         else:
             lines = [f"✅ Added {len(created)} step{'s' if len(created) != 1 else ''}:\n"]
             for s in created:
                 lines.append(f"• {s}")
-            await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        return
 
-    else:  # unclear
-        await update.effective_message.reply_text(
-            "Tell me what's on your plate — assignments, meetings, deadlines — and I'll sort it out for you."
+    # Priority 2: waiting for edit input
+    pending_edit = await get_pending_edit_task_id(chat_id)
+    if pending_edit is not None:
+        from app.telegram.db_helpers import apply_task_edit, clear_pending_edit
+        from app.services.ai_editor import parse_edit_instruction
+        try:
+            edit = await parse_edit_instruction(text)
+            if edit is None:
+                await update.message.reply_text(
+                    "🤔 Couldn't understand that edit.\n"
+                    "Try: _'deadline is Friday'_, _'rename to X'_, or _'delete'_",
+                    parse_mode="Markdown",
+                )
+                return
+            ok = await apply_task_edit(chat_id, str(pending_edit), edit)
+            if ok:
+                if edit["field"] == "delete":
+                    msg = "🗑️ Task deleted."
+                elif edit["field"] == "deadline":
+                    msg = f"✅ Deadline updated to *{edit['value']}*."
+                else:
+                    msg = f"✅ Renamed to *{edit['value']}*."
+                await update.message.reply_text(msg, parse_mode="Markdown")
+            else:
+                await update.message.reply_text("⚠️ Couldn't apply that edit. The task may have been deleted.")
+        finally:
+            await clear_pending_edit(chat_id)
+        return
+
+    # Priority 3: brain dump (default for all free text)
+    await update.message.reply_text("⏳ On it...")
+    from app.telegram.db_helpers import process_dump_for_chat_id
+    tasks = await process_dump_for_chat_id(chat_id, text)
+    if not tasks:
+        await update.message.reply_text(
+            "🤔 Couldn't find any tasks in that.\n"
+            "Try: _'essay due Friday, lab report Monday'_\n\n"
+            "Use /menu to see all options.",
+            parse_mode="Markdown",
         )
+    else:
+        lines = [f"✅ Added {len(tasks)} task{'s' if len(tasks) > 1 else ''}:\n"]
+        for t in tasks:
+            lines.append(f"• {t.title}")
+        lines.append("\nUse /today to see your priority.")
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
 async def _handle_email_link(update, email: str, chat_id: int):
