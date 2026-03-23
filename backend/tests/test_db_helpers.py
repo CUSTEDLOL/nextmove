@@ -20,7 +20,7 @@ from app.models import Base, User, Task
 # ---------------------------------------------------------------------------
 # DB setup (mirrors conftest.py pattern)
 # ---------------------------------------------------------------------------
-TEST_DB_URL = "postgresql://nextmove:nextmove@localhost:5432/nextmove"
+TEST_DB_URL = "postgresql://nextmove:nextmove@localhost:5433/nextmove"
 engine = create_engine(TEST_DB_URL)
 TestingSessionFactory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -67,6 +67,7 @@ def clean_test_user():
         user_row = teardown_db.query(User).filter(User.id == user_id).first()
         if user_row:
             user_row.pending_steps_task_id = None
+            user_row.pending_edit_task_id = None
             teardown_db.flush()
         teardown_db.query(Task).filter(Task.user_id == user_id).delete()
         teardown_db.query(User).filter(User.id == user_id).delete()
@@ -292,3 +293,55 @@ class TestSkipTopTaskForChatId:
 
         result = run(skip_top_task_for_chat_id(99999999))
         assert result is None
+
+
+class TestPendingEdit:
+    """set/get/clear pending_edit_task_id and apply_task_edit helpers."""
+
+    def test_set_and_get_pending_edit(self, clean_test_user):
+        from app.telegram.db_helpers import set_pending_edit, get_pending_edit_task_id
+
+        user_id = clean_test_user
+        task_id = _create_task(user_id, "Task for pending edit")
+
+        run(set_pending_edit(CHAT_ID, str(task_id)))
+        result = run(get_pending_edit_task_id(CHAT_ID))
+        assert result == task_id
+
+    def test_clear_pending_edit(self, clean_test_user):
+        from app.telegram.db_helpers import set_pending_edit, clear_pending_edit, get_pending_edit_task_id
+
+        user_id = clean_test_user
+        task_id = _create_task(user_id, "Task to clear edit")
+
+        run(set_pending_edit(CHAT_ID, str(task_id)))
+        run(clear_pending_edit(CHAT_ID))
+        result = run(get_pending_edit_task_id(CHAT_ID))
+        assert result is None
+
+    def test_apply_task_edit_deadline(self, clean_test_user):
+        from app.telegram.db_helpers import apply_task_edit
+
+        user_id = clean_test_user
+        task_id = _create_task(user_id, "Task for deadline edit")
+
+        ok = run(apply_task_edit(CHAT_ID, str(task_id), {"field": "deadline", "value": "2026-04-01"}))
+        assert ok is True
+
+    def test_apply_task_edit_title(self, clean_test_user):
+        from app.telegram.db_helpers import apply_task_edit
+
+        user_id = clean_test_user
+        task_id = _create_task(user_id, "Original title")
+
+        ok = run(apply_task_edit(CHAT_ID, str(task_id), {"field": "title", "value": "New Title"}))
+        assert ok is True
+
+    def test_apply_task_edit_delete(self, clean_test_user):
+        from app.telegram.db_helpers import apply_task_edit
+
+        user_id = clean_test_user
+        task_id = _create_task(user_id, "Task to delete")
+
+        ok = run(apply_task_edit(CHAT_ID, str(task_id), {"field": "delete"}))
+        assert ok is True

@@ -208,6 +208,65 @@ async def get_pending_steps_task_id(chat_id: int) -> Optional[uuid.UUID]:
         db.close()
 
 
+async def set_pending_edit(chat_id: int, task_id: str) -> None:
+    db = SessionLocal()
+    try:
+        user = _get_user(db, chat_id)
+        if user:
+            user.pending_edit_task_id = uuid.UUID(task_id)
+            db.commit()
+    finally:
+        db.close()
+
+
+async def clear_pending_edit(chat_id: int) -> None:
+    db = SessionLocal()
+    try:
+        user = _get_user(db, chat_id)
+        if user:
+            user.pending_edit_task_id = None
+            db.commit()
+    finally:
+        db.close()
+
+
+async def get_pending_edit_task_id(chat_id: int) -> Optional[uuid.UUID]:
+    db = SessionLocal()
+    try:
+        user = _get_user(db, chat_id)
+        return user.pending_edit_task_id if user else None
+    finally:
+        db.close()
+
+
+async def apply_task_edit(chat_id: int, task_id: str, edit: dict) -> bool:
+    """Apply a structured edit to a task. edit = {field: "deadline"|"title"|"delete", value: ...}"""
+    db = SessionLocal()
+    try:
+        user = _get_user(db, chat_id)
+        if not user:
+            return False
+        task = db.query(Task).filter(Task.id == task_id, Task.user_id == user.id).first()
+        if not task:
+            return False
+        field = edit.get("field")
+        if field == "delete":
+            db.delete(task)
+        elif field == "title":
+            task.title = edit["value"]
+        elif field == "deadline":
+            task.deadline = datetime.fromisoformat(edit["value"]) if edit.get("value") else None
+        else:
+            return False
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 def _generate_why(task: Task) -> str:
     reasons = []
 
