@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "dev-secret-change-in-production"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
+    web_url: str = "http://localhost:3000"
 
     class Config:
         env_file = ("../.env", ".env")
