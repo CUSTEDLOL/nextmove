@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from openai import AsyncOpenAI
 from app.config import settings
 
@@ -22,7 +22,7 @@ async def parse_edit_instruction(text: str) -> dict | None:
       {"field": "delete"}
     Returns None if the instruction can't be parsed.
     """
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     client = _get_openai_client()
     response = await client.chat.completions.create(
         model="gpt-4o-mini",
@@ -48,8 +48,14 @@ async def parse_edit_instruction(text: str) -> dict | None:
         result = json.loads(raw)
         if result is None:
             return None
-        if result.get("field") not in ("deadline", "title", "delete"):
+        field = result.get("field")
+        if field not in ("deadline", "title", "delete"):
             return None
+        if field == "deadline":
+            try:
+                datetime.fromisoformat(result.get("value", ""))
+            except (ValueError, TypeError):
+                return None
         return result
     except (json.JSONDecodeError, AttributeError):
         return None
