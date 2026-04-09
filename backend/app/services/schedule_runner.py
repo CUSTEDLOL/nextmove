@@ -8,7 +8,7 @@ from app.models import User, Task, ScheduleBlock
 from app.services.scheduler import build_schedule, FreeSlot, TaskToSchedule
 from app.services.calendar_builtin import get_builtin_free_slots
 
-ACTIVE_SCHEDULE_STATUSES = ["pending", "scheduled", "in_progress"]
+ACTIVE_SCHEDULE_STATUSES = ["pending", "scheduled", "in_progress", "rescheduled"]
 
 
 def _get_free_slots(user: User, date: datetime, db: Session, study_start: int = 9, study_end: int = 22) -> list[FreeSlot]:
@@ -17,7 +17,7 @@ def _get_free_slots(user: User, date: datetime, db: Session, study_start: int = 
         try:
             from app.services.calendar_google import get_google_service, get_free_slots as gcal_free
             service = get_google_service(user.google_access_token, user.google_refresh_token)
-            slots = gcal_free(service, "primary", date, study_start, study_end)
+            slots = gcal_free(service, "primary", date, study_start, study_end, tz_str=tz_str)
             return [FreeSlot(start=s.start, end=s.end) for s in slots]
         except Exception:
             pass  # Fall through to built-in calendar on any Google error
@@ -35,7 +35,7 @@ def get_free_slots_for_user(user: User, db: Session, date: datetime = None) -> l
 
 def run_schedule_for_user(user: User, db: Session, date: datetime = None) -> list[ScheduleBlock]:
     """
-    Assign all pending/rescheduled tasks to calendar slots.
+    Assign all pending, scheduled, in_progress, and rescheduled tasks to calendar slots.
     Clears existing future blocks first (idempotent).
     Returns the new schedule blocks created.
     """

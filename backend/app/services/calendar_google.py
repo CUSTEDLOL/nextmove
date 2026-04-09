@@ -1,4 +1,5 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
@@ -31,10 +32,29 @@ def get_free_slots(
     date: datetime,
     study_start: int = 9,
     study_end: int = 22,
+    tz_str: str = "UTC",
 ) -> list[FreeSlotResult]:
-    """Return free time windows on `date` between study_start and study_end hours."""
-    day_start = date.replace(hour=study_start, minute=0, second=0, microsecond=0)
-    day_end = date.replace(hour=study_end, minute=0, second=0, microsecond=0)
+    """Return free time windows on `date` between study_start and study_end hours.
+
+    `date` is a naive UTC datetime.  We convert it to the user's local timezone,
+    compute the study-window boundaries in local time, then convert back to naive
+    UTC so that the query range sent to Google Calendar is correct for the user's
+    wall-clock hours (same logic as get_builtin_free_slots).
+    """
+    try:
+        tz = ZoneInfo(tz_str)
+    except (ZoneInfoNotFoundError, KeyError):
+        tz = ZoneInfo("UTC")
+
+    utc_dt = date.replace(tzinfo=ZoneInfo("UTC"))
+    local_dt = utc_dt.astimezone(tz)
+
+    local_day_start = local_dt.replace(hour=study_start, minute=0, second=0, microsecond=0)
+    local_day_end = local_dt.replace(hour=study_end, minute=0, second=0, microsecond=0)
+
+    # Convert back to naive UTC for the Google Calendar API query
+    day_start = local_day_start.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    day_end = local_day_end.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
     events_result = service.events().list(
         calendarId=calendar_id,

@@ -1,10 +1,13 @@
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.services.scheduler import FreeSlot
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     import uuid
+
+UTC = ZoneInfo("UTC")
 
 
 def get_builtin_free_slots(
@@ -22,22 +25,20 @@ def get_builtin_free_slots(
     to naive UTC for storage — so blocks land at the correct wall-clock
     hours for the user.
     """
-    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
     try:
         tz = ZoneInfo(tz_str)
     except (ZoneInfoNotFoundError, KeyError):
-        tz = ZoneInfo("UTC")
+        tz = UTC
 
-    utc_dt = date.replace(tzinfo=ZoneInfo("UTC"))
+    utc_dt = date.replace(tzinfo=UTC)
     local_dt = utc_dt.astimezone(tz)
 
     local_day_start = local_dt.replace(hour=study_start, minute=0, second=0, microsecond=0)
     local_day_end = local_dt.replace(hour=study_end, minute=0, second=0, microsecond=0)
 
     # Convert back to naive UTC for DB storage
-    day_start = local_day_start.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
-    day_end = local_day_end.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    day_start = local_day_start.astimezone(UTC).replace(tzinfo=None)
+    day_end = local_day_end.astimezone(UTC).replace(tzinfo=None)
 
     if db is None:
         return [FreeSlot(start=day_start, end=day_end)]

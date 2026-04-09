@@ -128,7 +128,7 @@ def test_schedule_respects_user_timezone():
         blocks = run_schedule_for_user(tz_user, db, date=reference_utc)
         assert len(blocks) >= 1
         # First block should start at 01:00 UTC (= 09:00 Asia/Singapore)
-        assert blocks[0].start_time.hour == 1
+        assert blocks[0].start_time == datetime(2026, 4, 9, 1, 0, 0)
     finally:
         db.query(ScheduleBlock).filter(ScheduleBlock.user_id == tz_user_id).delete()
         db.query(Task).filter(Task.user_id == tz_user_id).delete()
