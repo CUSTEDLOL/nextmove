@@ -98,6 +98,46 @@ def test_free_slots_endpoint_returns_time_ranges(client):
     assert "end" in data[0]
 
 
+def test_schedule_get_returns_all_task_titles(client):
+    """GET /api/schedule must return the correct task_title for every block,
+    even when multiple blocks exist (guards against bulk-load regressions)."""
+    db = TestingSession()
+    try:
+        tasks_created = []
+        for i in range(3):
+            t = Task(
+                user_id=SCHEDULE_USER_ID,
+                title=f"Bulk task {i}",
+                effort="medium",
+                priority_index=float(5 + i),
+                status="pending",
+            )
+            db.add(t)
+            db.flush()
+            block_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            block_start = block_start + timedelta(days=1, hours=9 + i)
+            block = ScheduleBlock(
+                user_id=SCHEDULE_USER_ID,
+                task_id=t.id,
+                start_time=block_start,
+                end_time=block_start + timedelta(hours=1),
+            )
+            db.add(block)
+            tasks_created.append(t.id)
+        db.commit()
+
+        resp = client.get("/api/schedule")
+        assert resp.status_code == 200
+        returned_titles = {e["task_title"] for e in resp.json() if e["entry_type"] == "block"}
+        for i in range(3):
+            assert f"Bulk task {i}" in returned_titles, f"Bulk task {i} missing from schedule response"
+    finally:
+        db.query(ScheduleBlock).filter(ScheduleBlock.user_id == SCHEDULE_USER_ID).delete()
+        db.query(Task).filter(Task.user_id == SCHEDULE_USER_ID).delete()
+        db.commit()
+        db.close()
+
+
 def test_schedule_respects_user_timezone():
     """A UTC+8 user with study_start=9 should get blocks starting at 01:00 UTC."""
     from app.services.schedule_runner import run_schedule_for_user

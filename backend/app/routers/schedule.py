@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import User, ScheduleBlock, Task
+from app.services.schedule_runner import get_free_slots_for_user, run_schedule_for_user
 
 router = APIRouter(prefix="/api/schedule", tags=["schedule"])
 
@@ -19,16 +20,25 @@ class ScheduleEntry(BaseModel):
     entry_type: str   # "block" | "deadline"
 
 
-@router.get("", response_model=list[ScheduleEntry])
-def get_schedule(
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+class FreeSlotEntry(BaseModel):
+    start: datetime
+    end: datetime
+
+
+def _load_db_user(db: Session, user_id) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    return user if user else None
+
+
+def _build_schedule_entries(db: Session, user: User) -> list[ScheduleEntry]:
+    if user is None:
+        return []
+
     start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=31)
     result: list[ScheduleEntry] = []
 
-    # 1. Scheduled work blocks
+    # 1. Scheduled work blocks — bulk-load tasks to avoid N+1 queries
     blocks = (
         db.query(ScheduleBlock)
         .filter(
@@ -39,8 +49,15 @@ def get_schedule(
         .order_by(ScheduleBlock.start_time)
         .all()
     )
+    task_ids = [b.task_id for b in blocks]
+    tasks_map: dict = {}
+    if task_ids:
+        tasks_map = {
+            t.id: t
+            for t in db.query(Task).filter(Task.id.in_(task_ids)).all()
+        }
     for b in blocks:
-        task = db.get(Task, b.task_id)
+        task = tasks_map.get(b.task_id)
         result.append(ScheduleEntry(
             id=str(b.id),
             task_id=str(b.task_id),
@@ -67,7 +84,7 @@ def get_schedule(
         result.append(ScheduleEntry(
             id=f"deadline-{t.id}",
             task_id=str(t.id),
-            task_title=f"⏰ Due: {t.title}",
+            task_title=f"Due: {t.title}",
             effort=t.effort,
             start_time=t.deadline,
             end_time=t.deadline + timedelta(minutes=30),
@@ -75,3 +92,35 @@ def get_schedule(
         ))
 
     return sorted(result, key=lambda x: x.start_time)
+
+
+@router.get("", response_model=list[ScheduleEntry])
+def get_schedule(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return _build_schedule_entries(db, _load_db_user(db, user.id))
+
+
+@router.post("/rebuild", response_model=list[ScheduleEntry])
+def rebuild_schedule(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    db_user = _load_db_user(db, user.id)
+    if db_user is None:
+        return []
+    run_schedule_for_user(db_user, db)
+    return _build_schedule_entries(db, db_user)
+
+
+@router.get("/free-slots", response_model=list[FreeSlotEntry])
+def get_free_slots(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    db_user = _load_db_user(db, user.id)
+    if db_user is None:
+        return []
+    slots = get_free_slots_for_user(db_user, db)
+    return [FreeSlotEntry(start=slot.start, end=slot.end) for slot in slots]

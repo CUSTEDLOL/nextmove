@@ -88,3 +88,58 @@ def test_delete_calendar_event(client):
     assert del_resp.status_code == 200
     ids = [e["id"] for e in client.get("/api/calendar/events").json()]
     assert event_id not in ids
+
+
+def test_list_calendar_events_excludes_old_events(client):
+    """Events older than 30 days should not be returned — no unbounded history dump."""
+    db = TestingSession()
+    old_start = datetime.utcnow() - timedelta(days=90)
+    old_end = old_start + timedelta(hours=1)
+    event = CalendarEvent(
+        user_id=CAL_USER_ID,
+        title="Ancient event",
+        start_time=old_start,
+        end_time=old_end,
+        source="manual",
+    )
+    db.add(event)
+    db.commit()
+    old_id = str(event.id)
+    db.close()
+
+    resp = client.get("/api/calendar/events")
+    assert resp.status_code == 200
+    ids = [e["id"] for e in resp.json()]
+    assert old_id not in ids, "Events older than 30 days must be excluded from the listing"
+
+    # cleanup
+    db = TestingSession()
+    db.query(CalendarEvent).filter(CalendarEvent.user_id == CAL_USER_ID).delete()
+    db.commit()
+    db.close()
+
+
+def test_calendar_status_connect_and_disconnect(client):
+    db = TestingSession()
+    try:
+        user = db.query(User).filter(User.id == CAL_USER_ID).first()
+        user.google_access_token = "google-access-token"
+        user.google_refresh_token = "google-refresh-token"
+        user.uses_google_calendar = False
+        db.commit()
+    finally:
+        db.close()
+
+    status_resp = client.get("/api/calendar/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["google_calendar_connected"] is True
+    assert status_resp.json()["uses_google_calendar"] is False
+
+    connect_resp = client.post("/api/calendar/connect")
+    assert connect_resp.status_code == 200
+    assert connect_resp.json()["uses_google_calendar"] is True
+
+    disconnect_resp = client.post("/api/calendar/disconnect")
+    assert disconnect_resp.status_code == 200
+    assert disconnect_resp.json()["uses_google_calendar"] is False
+    assert disconnect_resp.json()["google_calendar_connected"] is False
