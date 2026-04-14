@@ -12,6 +12,7 @@ async def test_initialize_telegram_bot_returns_app_when_available():
     fake_bot.set_my_commands = AsyncMock()
     fake_app = MagicMock()
     fake_app.initialize = AsyncMock()
+    fake_app.start = AsyncMock()
     fake_app.shutdown = AsyncMock()
     fake_app.bot = fake_bot
 
@@ -20,6 +21,7 @@ async def test_initialize_telegram_bot_returns_app_when_available():
 
     assert result is fake_app
     fake_app.initialize.assert_awaited_once()
+    fake_app.start.assert_awaited_once()
     fake_bot.set_my_commands.assert_awaited_once()
 
 
