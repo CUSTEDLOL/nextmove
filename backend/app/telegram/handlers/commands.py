@@ -48,25 +48,31 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.telegram.db_helpers import list_tasks_for_chat_id
     chat_id = update.effective_chat.id
     await _clear_conversation_state(chat_id)
+    # list_command may be called from a callback (no update.message)
+    target = update.effective_message
     tasks = await list_tasks_for_chat_id(chat_id)
     if tasks is None:
-        await update.message.reply_text("You're not linked yet. Send your registered email.")
+        await target.reply_text("You're not linked yet. Send your registered email.")
         return
     if not tasks:
-        await update.message.reply_text("📭 No pending tasks. Use /dump to add some.")
+        await target.reply_text("📭 No tasks yet. Use /dump to add some.")
         return
-    await update.message.reply_text(f"📋 *Your tasks* ({len(tasks)} pending):", parse_mode="Markdown")
-    for t in tasks:
-        deadline_str = f" — due {t.deadline.strftime('%a %b %d')}" if t.deadline else ""
-        markup = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Done", callback_data=f"done:{t.id}"),
-            InlineKeyboardButton("⏭️ Skip", callback_data=f"skip:{t.id}"),
-        ]])
-        await update.message.reply_text(
-            f"*{t.title}*{deadline_str}",
-            parse_mode="Markdown",
-            reply_markup=markup,
-        )
+
+    lines = [f"📋 *Your tasks* ({len(tasks)} total):\n"]
+    for i, t in enumerate(tasks, 1):
+        deadline_str = f" — due {t.deadline.strftime('%b %d')}" if t.deadline else ""
+        status_icon = "▶️ " if t.status == "in_progress" else ""
+        lines.append(f"{i}. {status_icon}{t.title}{deadline_str}")
+    lines.append("\nTap a task to manage it, or use /today to see your #1 priority.")
+
+    await target.reply_text(
+        "\n".join(lines),
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"{i}. {t.title[:30]}", callback_data=f"task_actions:{t.id}")]
+            for i, t in enumerate(tasks[:8], 1)
+        ])
+    )
 
 
 async def dump_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

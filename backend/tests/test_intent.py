@@ -34,6 +34,14 @@ async def test_steps_reply_takes_priority():
     assert await classify_intent("prepare slides, rehearse notes", has_pending_steps=True) == "steps_reply"
 
 @pytest.mark.asyncio
+async def test_classifies_add_task_keywords():
+    from app.telegram.intent import classify_intent
+    assert await classify_intent("add essay due Friday", has_pending_steps=False) == "add_task"
+    assert await classify_intent("remind me about lab report on Monday", has_pending_steps=False) == "add_task"
+    assert await classify_intent("track my project proposal", has_pending_steps=False) == "add_task"
+    assert await classify_intent("new task: finish homework", has_pending_steps=False) == "add_task"
+
+@pytest.mark.asyncio
 async def test_gpt_fallback_dump(monkeypatch):
     from app.telegram import intent as intent_mod
     monkeypatch.setattr(intent_mod, "_gpt_classify", AsyncMock(return_value="dump"))

@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from telegram import BotCommand
 from app.routers import auth, tasks, telegram, calendar, users
 from app.routers.schedule import router as schedule_router
@@ -17,6 +18,7 @@ async def initialize_telegram_bot():
     tg_app = get_application()
     try:
         await tg_app.initialize()
+        await tg_app.start()
         await tg_app.bot.set_my_commands([
             BotCommand("menu",  "Show main menu"),
             BotCommand("today", "Today's priority task"),
@@ -37,15 +39,35 @@ async def initialize_telegram_bot():
 async def shutdown_telegram_bot(tg_app):
     if tg_app is None:
         return
+    await tg_app.stop()
     await tg_app.shutdown()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.workers import notification_jobs
+
     tg_app = await initialize_telegram_bot()
+    if tg_app is not None:
+        notification_jobs.set_bot(tg_app.bot)
 
     from app.services.pinger import ping_procrastinating_users
     scheduler.add_job(ping_procrastinating_users, "interval", hours=1, id="pinger")
+    scheduler.add_job(
+        notification_jobs.morning_brief_job,
+        CronTrigger(hour=8, minute=0),
+        id="morning_brief",
+    )
+    scheduler.add_job(
+        notification_jobs.evening_wrapup_job,
+        CronTrigger(hour=21, minute=0),
+        id="evening_wrapup",
+    )
+    scheduler.add_job(
+        notification_jobs.weekly_summary_job,
+        CronTrigger(day_of_week="sun", hour=19, minute=0),
+        id="weekly_summary",
+    )
     scheduler.start()
 
     yield

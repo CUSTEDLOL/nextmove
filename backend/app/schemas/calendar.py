@@ -4,6 +4,11 @@ from datetime import datetime
 import uuid
 
 
+class CalendarConnectionResponse(BaseModel):
+    uses_google_calendar: bool
+    google_calendar_connected: bool
+
+
 class CalendarEventCreate(BaseModel):
     title: str
     start_time: datetime

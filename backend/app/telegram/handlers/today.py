@@ -40,7 +40,11 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if primary:
         keyboard.append([
             InlineKeyboardButton("✅ Done", callback_data=f"done:{primary.id}"),
-            InlineKeyboardButton("⏭️ Skip", callback_data=f"skip:{primary.id}"),
+            InlineKeyboardButton("🗑️ Skip", callback_data=f"skip:{primary.id}"),
+        ])
+        keyboard.append([
+            InlineKeyboardButton("🔄 Reschedule", callback_data=f"reschedule:{primary.id}"),
+            InlineKeyboardButton("▶️ Start", callback_data=f"start:{primary.id}"),
         ])
         keyboard.append([
             InlineKeyboardButton("📋 Steps", callback_data=f"steps:{primary.id}"),

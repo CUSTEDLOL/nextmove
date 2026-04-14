@@ -6,7 +6,7 @@ Covers:
 - set_pending_steps / get_pending_steps_task_id / clear_pending_steps round-trip
 - list_tasks_for_chat_id returns a list
 - complete_top_task_for_chat_id marks highest-priority task completed
-- skip_top_task_for_chat_id marks highest-priority task rescheduled
+- skip_top_task_for_chat_id deletes highest-priority task (new behavior)
 """
 import pytest
 import uuid
@@ -17,7 +17,8 @@ from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.models import Base, User, Task, ScheduleBlock
+from app.models import Base, User, Task
+from app.models.schedule import ScheduleBlock
 
 # ---------------------------------------------------------------------------
 # DB setup (mirrors conftest.py pattern)
@@ -48,7 +49,9 @@ def clean_test_user():
         s.pending_edit_task_id = None
     db.flush()
     for s in stale:
-        db.query(ScheduleBlock).filter(ScheduleBlock.user_id == s.id).delete()
+        task_ids = [tid for (tid,) in db.query(Task.id).filter(Task.user_id == s.id).all()]
+        if task_ids:
+            db.query(ScheduleBlock).filter(ScheduleBlock.task_id.in_(task_ids)).delete(synchronize_session=False)
         db.query(Task).filter(Task.user_id == s.id).delete()
         db.delete(s)
     db.commit()
@@ -76,7 +79,9 @@ def clean_test_user():
             user_row.pending_steps_task_id = None
             user_row.pending_edit_task_id = None
             teardown_db.flush()
-        teardown_db.query(ScheduleBlock).filter(ScheduleBlock.user_id == user_id).delete()
+        task_ids = [tid for (tid,) in teardown_db.query(Task.id).filter(Task.user_id == user_id).all()]
+        if task_ids:
+            teardown_db.query(ScheduleBlock).filter(ScheduleBlock.task_id.in_(task_ids)).delete(synchronize_session=False)
         teardown_db.query(Task).filter(Task.user_id == user_id).delete()
         teardown_db.query(User).filter(User.id == user_id).delete()
         teardown_db.commit()
@@ -263,8 +268,8 @@ class TestProcessDumpForChatId:
             )
         ]
 
-        with patch("app.telegram.db_helpers.parse_brain_dump", AsyncMock(return_value=parsed)), \
-             patch("app.telegram.db_helpers.run_schedule_for_user") as schedule_mock:
+        with patch("app.services.task_service.parse_brain_dump", AsyncMock(return_value=parsed)), \
+             patch("app.services.task_service.run_schedule_for_user") as schedule_mock:
             result = run(process_dump_for_chat_id(CHAT_ID, "draft essay outline"))
 
         assert result is not None
@@ -292,7 +297,7 @@ class TestCompleteTopTaskForChatId:
         user_id = clean_test_user
         _create_task(user_id, "Top task", priority=9.0)
 
-        with patch("app.telegram.db_helpers.run_schedule_for_user") as schedule_mock:
+        with patch("app.services.task_service.run_schedule_for_user") as schedule_mock:
             result = run(complete_top_task_for_chat_id(CHAT_ID))
 
         assert result is not None
@@ -312,7 +317,7 @@ class TestCompleteTopTaskForChatId:
 
 
 class TestSkipTopTaskForChatId:
-    """skip_top_task_for_chat_id reschedules highest-priority task."""
+    """skip_top_task_for_chat_id deletes highest-priority task (new behavior)."""
 
     def test_skips_highest_priority_task(self, clean_test_user):
         from app.telegram.db_helpers import skip_top_task_for_chat_id
@@ -323,8 +328,8 @@ class TestSkipTopTaskForChatId:
 
         result = run(skip_top_task_for_chat_id(CHAT_ID))
         assert result is not None
+        # Returns the task's info before it was deleted
         assert result.title == "Top task"
-        assert result.status == "rescheduled"
 
     def test_skipping_top_task_reruns_schedule(self, clean_test_user):
         from app.telegram.db_helpers import skip_top_task_for_chat_id
@@ -332,7 +337,7 @@ class TestSkipTopTaskForChatId:
         user_id = clean_test_user
         _create_task(user_id, "Top task", priority=8.0)
 
-        with patch("app.telegram.db_helpers.run_schedule_for_user") as schedule_mock:
+        with patch("app.services.task_service.run_schedule_for_user") as schedule_mock:
             result = run(skip_top_task_for_chat_id(CHAT_ID))
 
         assert result is not None
@@ -381,7 +386,7 @@ class TestPendingEdit:
         user_id = clean_test_user
         task_id = _create_task(user_id, "Task for deadline edit")
 
-        with patch("app.telegram.db_helpers.run_schedule_for_user") as schedule_mock:
+        with patch("app.services.task_service.run_schedule_for_user") as schedule_mock:
             ok = run(apply_task_edit(CHAT_ID, str(task_id), {"field": "deadline", "value": "2026-04-01"}))
 
         assert ok is True
