@@ -7,13 +7,55 @@ from app.database import SessionLocal
 from app.models import User, Task
 from app.schemas.tasks import TaskResponse
 from app.services.ai_parser import parse_brain_dump
-from app.services.matrix_scorer import score_task, TaskInput
+from app.services.matrix_scorer import (
+    normalized_importance_score,
+    normalized_urgency_score,
+    score_task_from_matrix,
+)
+from app.services.schedule_runner import run_schedule_for_user
 from datetime import datetime
 import uuid
+
+ACTIVE_TASK_STATUSES = ["pending", "scheduled", "in_progress"]
 
 
 def _get_user(db, chat_id: int) -> Optional[User]:
     return db.query(User).filter(User.telegram_chat_id == chat_id).first()
+
+
+def _apply_task_scores(
+    task: Task,
+    *,
+    recompute_urgency: bool = False,
+    recompute_importance: bool = False,
+) -> None:
+    if recompute_urgency or task.urgency_score is None:
+        task.urgency_score = normalized_urgency_score(task.deadline)
+    if recompute_importance or task.importance_score is None:
+        task.importance_score = normalized_importance_score(task.importance or 3)
+    task.priority_index = score_task_from_matrix(
+        task.urgency_score or 0,
+        task.importance_score or 0,
+        effort=task.effort or "medium",
+    )
+
+
+def _serialize_task(task: Task) -> TaskResponse:
+    return TaskResponse(
+        id=task.id,
+        title=task.title,
+        deadline=task.deadline,
+        effort=task.effort,
+        importance=task.importance,
+        context=task.context,
+        notes=task.notes,
+        urgency_score=task.urgency_score,
+        importance_score=task.importance_score,
+        priority_index=task.priority_index,
+        status=task.status,
+        created_at=task.created_at,
+        scheduled_today=False,
+    )
 
 
 async def get_today_for_chat_id(chat_id: int) -> Optional[tuple]:
@@ -26,15 +68,15 @@ async def get_today_for_chat_id(chat_id: int) -> Optional[tuple]:
             db.query(Task)
             .filter(
                 Task.user_id == user.id,
-                Task.status.in_(["pending", "scheduled", "in_progress"]),
+                Task.status.in_(ACTIVE_TASK_STATUSES),
                 Task.parent_task_id.is_(None),
             )
             .order_by(Task.priority_index.desc())
             .limit(4)
             .all()
         )
-        primary = TaskResponse.model_validate(tasks[0]) if tasks else None
-        secondary = [TaskResponse.model_validate(t) for t in tasks[1:4]]
+        primary = _serialize_task(tasks[0]) if tasks else None
+        secondary = [_serialize_task(t) for t in tasks[1:4]]
         return primary, secondary
     finally:
         db.close()
@@ -50,14 +92,14 @@ async def list_tasks_for_chat_id(chat_id: int) -> Optional[list]:
             db.query(Task)
             .filter(
                 Task.user_id == user.id,
-                Task.status.in_(["pending", "scheduled", "in_progress"]),
+                Task.status.in_(ACTIVE_TASK_STATUSES),
                 Task.parent_task_id.is_(None),
             )
             .order_by(Task.priority_index.desc())
             .limit(10)
             .all()
         )
-        return [TaskResponse.model_validate(t) for t in tasks]
+        return [_serialize_task(t) for t in tasks]
     finally:
         db.close()
 
@@ -82,6 +124,7 @@ async def process_dump_for_chat_id(chat_id: int, text: str) -> Optional[list]:
                 context=p.context,
                 status="pending",
             )
+            _apply_task_scores(task, recompute_urgency=True, recompute_importance=True)
             tasks_to_add.append((task, p))
 
         # Add all tasks, flush to get IDs (no commit yet)
@@ -91,12 +134,6 @@ async def process_dump_for_chat_id(chat_id: int, text: str) -> Optional[list]:
 
         # Score and add steps
         for task, p in tasks_to_add:
-            task.priority_index = score_task(TaskInput(
-                deadline=task.deadline,
-                effort=task.effort or "medium",
-                importance=task.importance or 3,
-                dependency_count=0,
-            ))
             for step_title in p.steps:
                 step = Task(
                     user_id=user.id,
@@ -108,14 +145,16 @@ async def process_dump_for_chat_id(chat_id: int, text: str) -> Optional[list]:
                     context=task.context,
                     status="pending",
                 )
+                _apply_task_scores(step, recompute_urgency=True, recompute_importance=True)
                 db.add(step)
 
         db.commit()  # single atomic commit
+        run_schedule_for_user(user, db)
 
         created = []
         for task, _ in tasks_to_add:
             db.refresh(task)
-            created.append(TaskResponse.model_validate(task))
+            created.append(_serialize_task(task))
         return created
     except Exception:
         db.rollback()
@@ -135,7 +174,7 @@ async def get_steps_for_chat_id(chat_id: int, task_id: str) -> Optional[tuple]:
             return None
         steps = db.query(Task).filter(Task.parent_task_id == task.id).order_by(Task.created_at).all()
         # Convert to dicts before session closes to avoid DetachedInstanceError
-        parent_data = TaskResponse.model_validate(task)
+        parent_data = _serialize_task(task)
         steps_data = [{"title": s.title, "status": s.status, "id": str(s.id)} for s in steps]
         return parent_data, steps_data
     finally:
@@ -239,6 +278,11 @@ async def get_pending_edit_task_id(chat_id: int) -> Optional[uuid.UUID]:
         db.close()
 
 
+async def clear_pending_state(chat_id: int) -> None:
+    await clear_pending_steps(chat_id)
+    await clear_pending_edit(chat_id)
+
+
 async def apply_task_edit(chat_id: int, task_id: str, edit: dict) -> bool:
     """Apply a structured edit to a task. edit = {field: "deadline"|"title"|"delete", value: ...}"""
     db = SessionLocal()
@@ -256,9 +300,11 @@ async def apply_task_edit(chat_id: int, task_id: str, edit: dict) -> bool:
             task.title = edit["value"]
         elif field == "deadline":
             task.deadline = datetime.fromisoformat(edit["value"]) if edit.get("value") else None
+            _apply_task_scores(task, recompute_urgency=True)
         else:
             return False
         db.commit()
+        run_schedule_for_user(user, db)
         return True
     except Exception:
         db.rollback()
@@ -332,6 +378,7 @@ async def complete_task_for_chat_id(chat_id: int, task_id: str) -> bool:
             return False
         task.status = "completed"
         db.commit()
+        run_schedule_for_user(user, db)
         return True
     finally:
         db.close()
@@ -358,8 +405,9 @@ async def complete_top_task_for_chat_id(chat_id: int) -> Optional[TaskResponse]:
             return None
         task.status = "completed"
         db.commit()
+        run_schedule_for_user(user, db)
         db.refresh(task)
-        return TaskResponse.model_validate(task)
+        return _serialize_task(task)
     finally:
         db.close()
 
@@ -375,6 +423,7 @@ async def reschedule_task_for_chat_id(chat_id: int, task_id: str) -> bool:
             return False
         task.status = "rescheduled"
         db.commit()
+        run_schedule_for_user(user, db)
         return True
     finally:
         db.close()
@@ -401,7 +450,8 @@ async def skip_top_task_for_chat_id(chat_id: int) -> Optional[TaskResponse]:
             return None
         task.status = "rescheduled"
         db.commit()
+        run_schedule_for_user(user, db)
         db.refresh(task)
-        return TaskResponse.model_validate(task)
+        return _serialize_task(task)
     finally:
         db.close()

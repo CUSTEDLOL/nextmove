@@ -1,18 +1,25 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import User, Task
+from app.models import User, Task, ScheduleBlock
 from app.schemas.tasks import (
-    TaskCreate, TaskResponse, BrainDumpRequest, BrainDumpResponse, TodayResponse, StepsDumpRequest
+    TaskCreate, TaskUpdate, TaskResponse, BrainDumpRequest, BrainDumpResponse, TodayResponse, StepsDumpRequest
 )
 from app.services.ai_parser import parse_brain_dump
-from app.services.matrix_scorer import score_task, TaskInput
+from app.services.matrix_scorer import (
+    TaskInput,
+    normalized_importance_score,
+    normalized_urgency_score,
+    score_task,
+    score_task_from_matrix,
+)
 from app.services.schedule_runner import run_schedule_for_user
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+ACTIVE_TASK_STATUSES = ["pending", "scheduled", "in_progress"]
 
 
 def _compute_score(task: Task) -> float:
@@ -25,6 +32,86 @@ def _compute_score(task: Task) -> float:
     return score_task(task_input)
 
 
+def _load_user_record(db: Session, user_id) -> User:
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db_user
+
+
+def _apply_task_scores(
+    task: Task,
+    *,
+    recompute_urgency: bool = False,
+    recompute_importance: bool = False,
+):
+    if recompute_urgency or task.urgency_score is None:
+        task.urgency_score = normalized_urgency_score(task.deadline)
+    if recompute_importance or task.importance_score is None:
+        task.importance_score = normalized_importance_score(task.importance or 3)
+    task.priority_index = score_task_from_matrix(
+        task.urgency_score or 0,
+        task.importance_score or 0,
+        effort=task.effort or "medium",
+    )
+
+
+def _scheduled_today_ids(db: Session, user_id) -> set:
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow_start = today_start + timedelta(days=1)
+    return {
+        task_id
+        for (task_id,) in db.query(ScheduleBlock.task_id)
+        .filter(
+            ScheduleBlock.user_id == user_id,
+            ScheduleBlock.start_time >= today_start,
+            ScheduleBlock.start_time < tomorrow_start,
+        )
+        .all()
+    }
+
+
+def _serialize_task(
+    task: Task,
+    db: Session,
+    *,
+    scheduled_today_ids: set | None = None,
+    include_steps: bool = True,
+) -> TaskResponse:
+    if scheduled_today_ids is None:
+        scheduled_today_ids = _scheduled_today_ids(db, task.user_id)
+
+    steps: list[TaskResponse] = []
+    if include_steps:
+        child_steps = (
+            db.query(Task)
+            .filter(Task.parent_task_id == task.id)
+            .order_by(Task.created_at)
+            .all()
+        )
+        steps = [
+            _serialize_task(step, db, scheduled_today_ids=scheduled_today_ids, include_steps=False)
+            for step in child_steps
+        ]
+
+    return TaskResponse(
+        id=task.id,
+        title=task.title,
+        deadline=task.deadline,
+        effort=task.effort,
+        importance=task.importance,
+        context=task.context,
+        notes=task.notes,
+        urgency_score=task.urgency_score,
+        importance_score=task.importance_score,
+        priority_index=task.priority_index,
+        status=task.status,
+        created_at=task.created_at,
+        scheduled_today=task.id in scheduled_today_ids,
+        steps=steps,
+    )
+
+
 @router.post("", response_model=TaskResponse)
 def add_task(
     req: TaskCreate,
@@ -32,13 +119,13 @@ def add_task(
     user: User = Depends(get_current_user)
 ):
     task = Task(**req.model_dump(), user_id=user.id, status="pending")
+    _apply_task_scores(task, recompute_urgency=True, recompute_importance=True)
     db.add(task)
     db.commit()
     db.refresh(task)
-    task.priority_index = _compute_score(task)
-    db.commit()
+    run_schedule_for_user(_load_user_record(db, user.id), db)
     db.refresh(task)
-    return task
+    return _serialize_task(task, db)
 
 
 @router.post("/dump", response_model=BrainDumpResponse)
@@ -59,12 +146,11 @@ async def brain_dump(
             effort=p.effort,
             importance=p.importance,
             context=p.context,
+            notes=None,
             status="pending"
         )
+        _apply_task_scores(task, recompute_urgency=True, recompute_importance=True)
         db.add(task)
-        db.commit()
-        db.refresh(task)
-        task.priority_index = _compute_score(task)
         db.commit()
         db.refresh(task)
         # Create steps if GPT detected sub-actions
@@ -79,12 +165,18 @@ async def brain_dump(
                 context=p.context,
                 status="pending"
             )
+            _apply_task_scores(step, recompute_urgency=True, recompute_importance=True)
             db.add(step)
         if p.steps:
             db.commit()
         created.append(task)
-    run_schedule_for_user(user, db)
-    return BrainDumpResponse(tasks=created)
+    run_schedule_for_user(_load_user_record(db, user.id), db)
+    for task in created:
+        db.refresh(task)
+    scheduled_today_ids = _scheduled_today_ids(db, user.id)
+    return BrainDumpResponse(
+        tasks=[_serialize_task(task, db, scheduled_today_ids=scheduled_today_ids) for task in created]
+    )
 
 
 @router.get("/today", response_model=TodayResponse)
@@ -97,7 +189,7 @@ def get_today(
         .filter(
             Task.user_id == user.id,
             Task.parent_task_id.is_(None),
-            Task.status.in_(["pending", "scheduled", "in_progress"])
+            Task.status.in_(ACTIVE_TASK_STATUSES)
         )
         .order_by(Task.priority_index.desc())
         .limit(4)
@@ -105,7 +197,14 @@ def get_today(
     )
     primary = tasks[0] if tasks else None
     secondary = tasks[1:4] if len(tasks) > 1 else []
-    return TodayResponse(primary=primary, secondary=secondary)
+    scheduled_today_ids = _scheduled_today_ids(db, user.id)
+    return TodayResponse(
+        primary=_serialize_task(primary, db, scheduled_today_ids=scheduled_today_ids) if primary else None,
+        secondary=[
+            _serialize_task(task, db, scheduled_today_ids=scheduled_today_ids)
+            for task in secondary
+        ],
+    )
 
 
 @router.get("", response_model=list[TaskResponse])
@@ -119,9 +218,77 @@ def list_tasks(
         .order_by(Task.priority_index.desc())
         .all()
     )
-    for task in tasks:
-        task.steps = db.query(Task).filter(Task.parent_task_id == task.id).order_by(Task.created_at).all()
-    return tasks
+    scheduled_today_ids = _scheduled_today_ids(db, user.id)
+    return [
+        _serialize_task(task, db, scheduled_today_ids=scheduled_today_ids)
+        for task in tasks
+    ]
+
+
+@router.get("/{task_id}", response_model=TaskResponse)
+def get_task(
+    task_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    task = db.query(Task).filter(Task.id == task_id, Task.user_id == user.id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return _serialize_task(task, db)
+
+
+@router.patch("/{task_id}", response_model=TaskResponse)
+def patch_task(
+    task_id: str,
+    req: TaskUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    task = db.query(Task).filter(Task.id == task_id, Task.user_id == user.id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    updates = req.model_dump(exclude_unset=True)
+    recompute_urgency = "deadline" in updates and "urgency_score" not in updates
+    recompute_importance = "importance" in updates and "importance_score" not in updates
+
+    for field, value in updates.items():
+        setattr(task, field, value)
+
+    _apply_task_scores(
+        task,
+        recompute_urgency=recompute_urgency,
+        recompute_importance=recompute_importance,
+    )
+    db.commit()
+    db.refresh(task)
+    run_schedule_for_user(_load_user_record(db, user.id), db)
+    db.refresh(task)
+    return _serialize_task(task, db)
+
+
+@router.delete("/{task_id}")
+def delete_task(
+    task_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    task = db.query(Task).filter(Task.id == task_id, Task.user_id == user.id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    step_ids = [
+        step_id
+        for (step_id,) in db.query(Task.id).filter(Task.parent_task_id == task.id).all()
+    ]
+    task_ids = [task.id, *step_ids]
+    db.query(ScheduleBlock).filter(ScheduleBlock.task_id.in_(task_ids)).delete(synchronize_session=False)
+    if step_ids:
+        db.query(Task).filter(Task.id.in_(step_ids)).delete(synchronize_session=False)
+    db.delete(task)
+    db.commit()
+    run_schedule_for_user(_load_user_record(db, user.id), db)
+    return {"ok": True}
 
 
 @router.post("/{task_id}/complete", response_model=TaskResponse)
@@ -135,8 +302,9 @@ def complete_task(
         raise HTTPException(status_code=404, detail="Task not found")
     task.status = "completed"
     db.commit()
+    run_schedule_for_user(_load_user_record(db, user.id), db)
     db.refresh(task)
-    return task
+    return _serialize_task(task, db)
 
 
 @router.post("/{task_id}/steps", response_model=list[TaskResponse])
@@ -171,7 +339,7 @@ def add_steps(
         db.commit()
         db.refresh(step)
         created.append(step)
-    return created
+    return [_serialize_task(step, db, include_steps=False) for step in created]
 
 
 @router.get("/{task_id}/steps", response_model=list[TaskResponse])
@@ -183,7 +351,8 @@ def get_steps(
     parent = db.query(Task).filter(Task.id == task_id, Task.user_id == user.id).first()
     if not parent:
         raise HTTPException(status_code=404, detail="Task not found")
-    return db.query(Task).filter(Task.parent_task_id == parent.id).order_by(Task.created_at).all()
+    steps = db.query(Task).filter(Task.parent_task_id == parent.id).order_by(Task.created_at).all()
+    return [_serialize_task(step, db, include_steps=False) for step in steps]
 
 
 @router.get("/{task_id}/why")
@@ -253,5 +422,6 @@ def reschedule_task(
         raise HTTPException(status_code=404, detail="Task not found")
     task.status = "rescheduled"
     db.commit()
+    run_schedule_for_user(_load_user_record(db, user.id), db)
     db.refresh(task)
-    return task
+    return _serialize_task(task, db)

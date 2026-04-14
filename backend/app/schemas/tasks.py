@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 import uuid
@@ -10,6 +10,19 @@ class TaskCreate(BaseModel):
     effort: str = "medium"
     importance: int = 3
     context: Optional[str] = "Study"
+    notes: Optional[str] = None
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    deadline: Optional[datetime] = None
+    effort: Optional[str] = None
+    importance: Optional[int] = None
+    context: Optional[str] = None
+    notes: Optional[str] = None
+    urgency_score: Optional[float] = None
+    importance_score: Optional[float] = None
+    status: Optional[str] = None
 
 
 class TaskResponse(BaseModel):
@@ -19,10 +32,14 @@ class TaskResponse(BaseModel):
     effort: Optional[str]
     importance: Optional[int]
     context: Optional[str]
+    notes: Optional[str] = None
+    urgency_score: Optional[float] = None
+    importance_score: Optional[float] = None
     priority_index: Optional[float]
     status: str
     created_at: datetime
-    steps: list["TaskResponse"] = []
+    scheduled_today: bool = False
+    steps: list["TaskResponse"] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

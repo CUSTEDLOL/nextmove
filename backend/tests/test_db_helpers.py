@@ -11,16 +11,21 @@ Covers:
 import pytest
 import uuid
 import asyncio
+import os
+from unittest.mock import AsyncMock, patch
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.models import Base, User, Task
+from app.models import Base, User, Task, ScheduleBlock
 
 # ---------------------------------------------------------------------------
 # DB setup (mirrors conftest.py pattern)
 # ---------------------------------------------------------------------------
-TEST_DB_URL = "postgresql://nextmove:nextmove@localhost:5433/nextmove"
+TEST_DB_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    os.getenv("DATABASE_URL", "postgresql://nextmove:nextmove@localhost:5432/nextmove"),
+)
 engine = create_engine(TEST_DB_URL)
 TestingSessionFactory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -40,8 +45,10 @@ def clean_test_user():
     stale = db.query(User).filter(User.telegram_chat_id == CHAT_ID).all()
     for s in stale:
         s.pending_steps_task_id = None
+        s.pending_edit_task_id = None
     db.flush()
     for s in stale:
+        db.query(ScheduleBlock).filter(ScheduleBlock.user_id == s.id).delete()
         db.query(Task).filter(Task.user_id == s.id).delete()
         db.delete(s)
     db.commit()
@@ -69,6 +76,7 @@ def clean_test_user():
             user_row.pending_steps_task_id = None
             user_row.pending_edit_task_id = None
             teardown_db.flush()
+        teardown_db.query(ScheduleBlock).filter(ScheduleBlock.user_id == user_id).delete()
         teardown_db.query(Task).filter(Task.user_id == user_id).delete()
         teardown_db.query(User).filter(User.id == user_id).delete()
         teardown_db.commit()
@@ -239,6 +247,30 @@ class TestListTasksForChatId:
         assert result[0].title == "High priority"
 
 
+class TestProcessDumpForChatId:
+    def test_process_dump_reruns_schedule(self, clean_test_user):
+        from app.services.ai_parser import ParsedTask
+        from app.telegram.db_helpers import process_dump_for_chat_id
+
+        parsed = [
+            ParsedTask(
+                title="Draft essay outline",
+                deadline=None,
+                effort="medium",
+                importance=4,
+                context="Study",
+                steps=["Open notes"],
+            )
+        ]
+
+        with patch("app.telegram.db_helpers.parse_brain_dump", AsyncMock(return_value=parsed)), \
+             patch("app.telegram.db_helpers.run_schedule_for_user") as schedule_mock:
+            result = run(process_dump_for_chat_id(CHAT_ID, "draft essay outline"))
+
+        assert result is not None
+        schedule_mock.assert_called_once()
+
+
 class TestCompleteTopTaskForChatId:
     """complete_top_task_for_chat_id marks highest-priority task completed."""
 
@@ -253,6 +285,18 @@ class TestCompleteTopTaskForChatId:
         assert result is not None
         assert result.title == "Top task"
         assert result.status == "completed"
+
+    def test_completing_top_task_reruns_schedule(self, clean_test_user):
+        from app.telegram.db_helpers import complete_top_task_for_chat_id
+
+        user_id = clean_test_user
+        _create_task(user_id, "Top task", priority=9.0)
+
+        with patch("app.telegram.db_helpers.run_schedule_for_user") as schedule_mock:
+            result = run(complete_top_task_for_chat_id(CHAT_ID))
+
+        assert result is not None
+        schedule_mock.assert_called_once()
 
     def test_returns_none_when_no_tasks(self, clean_test_user):
         from app.telegram.db_helpers import complete_top_task_for_chat_id
@@ -281,6 +325,18 @@ class TestSkipTopTaskForChatId:
         assert result is not None
         assert result.title == "Top task"
         assert result.status == "rescheduled"
+
+    def test_skipping_top_task_reruns_schedule(self, clean_test_user):
+        from app.telegram.db_helpers import skip_top_task_for_chat_id
+
+        user_id = clean_test_user
+        _create_task(user_id, "Top task", priority=8.0)
+
+        with patch("app.telegram.db_helpers.run_schedule_for_user") as schedule_mock:
+            result = run(skip_top_task_for_chat_id(CHAT_ID))
+
+        assert result is not None
+        schedule_mock.assert_called_once()
 
     def test_returns_none_when_no_tasks(self, clean_test_user):
         from app.telegram.db_helpers import skip_top_task_for_chat_id
@@ -325,8 +381,11 @@ class TestPendingEdit:
         user_id = clean_test_user
         task_id = _create_task(user_id, "Task for deadline edit")
 
-        ok = run(apply_task_edit(CHAT_ID, str(task_id), {"field": "deadline", "value": "2026-04-01"}))
+        with patch("app.telegram.db_helpers.run_schedule_for_user") as schedule_mock:
+            ok = run(apply_task_edit(CHAT_ID, str(task_id), {"field": "deadline", "value": "2026-04-01"}))
+
         assert ok is True
+        schedule_mock.assert_called_once()
 
     def test_apply_task_edit_title(self, clean_test_user):
         from app.telegram.db_helpers import apply_task_edit

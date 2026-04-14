@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from pydantic import BaseModel
 
-EFFORT_HOURS_DEFAULT = {"low": 1, "medium": 2, "high": 3}
+EFFORT_HOURS_DEFAULT = {"low": 1, "medium": 2, "high": 4}
 
 
 class FreeSlot(BaseModel):

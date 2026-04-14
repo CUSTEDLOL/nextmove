@@ -2,10 +2,16 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 
+async def _clear_conversation_state(chat_id: int):
+    from app.telegram.db_helpers import clear_pending_state
+    await clear_pending_state(chat_id)
+
+
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.database import SessionLocal
     from app.models import User
     chat_id = update.effective_chat.id
+    await _clear_conversation_state(chat_id)
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
@@ -33,6 +39,7 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _clear_conversation_state(update.effective_chat.id)
     from app.telegram.handlers.today import today_command as _today
     await _today(update, context)
 
@@ -40,6 +47,7 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.telegram.db_helpers import list_tasks_for_chat_id
     chat_id = update.effective_chat.id
+    await _clear_conversation_state(chat_id)
     tasks = await list_tasks_for_chat_id(chat_id)
     if tasks is None:
         await update.message.reply_text("You're not linked yet. Send your registered email.")
@@ -62,6 +70,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def dump_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _clear_conversation_state(update.effective_chat.id)
     await update.message.reply_text(
         "🧠 Go ahead — tell me everything on your plate:\n"
         "_assignments, deadlines, meetings, anything_",
@@ -72,6 +81,7 @@ async def dump_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.telegram.db_helpers import complete_top_task_for_chat_id
     chat_id = update.effective_chat.id
+    await _clear_conversation_state(chat_id)
     task = await complete_top_task_for_chat_id(chat_id)
     if task:
         await update.message.reply_text(
@@ -85,6 +95,7 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.telegram.db_helpers import skip_top_task_for_chat_id
     chat_id = update.effective_chat.id
+    await _clear_conversation_state(chat_id)
     task = await skip_top_task_for_chat_id(chat_id)
     if task:
         await update.message.reply_text(
@@ -98,6 +109,7 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.telegram.db_helpers import list_tasks_for_chat_id
     chat_id = update.effective_chat.id
+    await _clear_conversation_state(chat_id)
     tasks = await list_tasks_for_chat_id(chat_id)
     if tasks is None:
         await update.message.reply_text("You're not linked yet.")
@@ -120,6 +132,7 @@ async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def web_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.config import settings
+    await _clear_conversation_state(update.effective_chat.id)
     await update.message.reply_text(
         "Open NextMove in your browser:",
         reply_markup=InlineKeyboardMarkup([[

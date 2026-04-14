@@ -22,3 +22,8 @@ class CalendarEventResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CalendarConnectionResponse(BaseModel):
+    uses_google_calendar: bool
+    google_calendar_connected: bool

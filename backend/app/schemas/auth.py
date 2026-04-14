@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, EmailStr
 
 
@@ -16,7 +17,16 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    user_id: Optional[str] = None
 
 
 class GoogleAuthRequest(BaseModel):
     code: str
+
+
+class GoogleExchangeRequest(BaseModel):
+    email: EmailStr
+    name: Optional[str] = None
+    access_token: str
+    refresh_token: Optional[str] = None
+    timezone: str = "UTC"

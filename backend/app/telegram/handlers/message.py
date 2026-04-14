@@ -2,6 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from app.database import SessionLocal
 from app.models import User
+from app.telegram import intent as intent_module
 
 
 def _get_user_by_chat_id(chat_id: int):
@@ -37,15 +38,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pending_steps = await get_pending_steps_task_id(chat_id)
     if pending_steps is not None:
         from app.telegram.db_helpers import add_steps_for_chat_id, clear_pending_steps
-        try:
-            created = await add_steps_for_chat_id(chat_id, str(pending_steps), text)
-        finally:
-            await clear_pending_steps(chat_id)
+        created = await add_steps_for_chat_id(chat_id, str(pending_steps), text)
         if not created:
             await update.message.reply_text(
                 "🤔 Couldn't parse steps. Try: `prepare slides, review notes`"
             )
         else:
+            await clear_pending_steps(chat_id)
             lines = [f"✅ Added {len(created)} step{'s' if len(created) != 1 else ''}:\n"]
             for s in created:
                 lines.append(f"• {s}")
@@ -57,31 +56,55 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if pending_edit is not None:
         from app.telegram.db_helpers import apply_task_edit, clear_pending_edit
         from app.services.ai_editor import parse_edit_instruction
-        try:
-            edit = await parse_edit_instruction(text)
-            if edit is None:
-                await update.message.reply_text(
-                    "🤔 Couldn't understand that edit.\n"
-                    "Try: _'deadline is Friday'_, _'rename to X'_, or _'delete'_",
-                    parse_mode="Markdown",
-                )
-                return
-            ok = await apply_task_edit(chat_id, str(pending_edit), edit)
-            if ok:
-                if edit["field"] == "delete":
-                    msg = "🗑️ Task deleted."
-                elif edit["field"] == "deadline":
-                    msg = f"✅ Deadline updated to *{edit['value']}*."
-                else:
-                    msg = f"✅ Renamed to *{edit['value']}*."
-                await update.message.reply_text(msg, parse_mode="Markdown")
-            else:
-                await update.message.reply_text("⚠️ Couldn't apply that edit. The task may have been deleted.")
-        finally:
+        edit = await parse_edit_instruction(text)
+        if edit is None:
+            await update.message.reply_text(
+                "🤔 Couldn't understand that edit.\n"
+                "Try: _'deadline is Friday'_, _'rename to X'_, or _'delete'_",
+                parse_mode="Markdown",
+            )
+            return
+
+        ok = await apply_task_edit(chat_id, str(pending_edit), edit)
+        if ok:
             await clear_pending_edit(chat_id)
+            if edit["field"] == "delete":
+                msg = "🗑️ Task deleted."
+            elif edit["field"] == "deadline":
+                msg = f"✅ Deadline updated to *{edit['value']}*."
+            else:
+                msg = f"✅ Renamed to *{edit['value']}*."
+            await update.message.reply_text(msg, parse_mode="Markdown")
+        else:
+            await clear_pending_edit(chat_id)
+            await update.message.reply_text("⚠️ Couldn't apply that edit. The task may have been deleted.")
         return
 
-    # Priority 3: brain dump (default for all free text)
+    intent = await intent_module.classify_intent(text, has_pending_steps=False)
+    if intent == "today":
+        from app.telegram.handlers.today import today_command
+        await today_command(update, context)
+        return
+    if intent == "list":
+        from app.telegram.handlers.commands import list_command
+        await list_command(update, context)
+        return
+    if intent == "complete":
+        from app.telegram.handlers.commands import done_command
+        await done_command(update, context)
+        return
+    if intent == "skip":
+        from app.telegram.handlers.commands import skip_command
+        await skip_command(update, context)
+        return
+    if intent == "unclear":
+        await update.message.reply_text(
+            "I can help with /today, /list, /dump, /done, /skip, or /edit. "
+            "Or just send a brain dump with tasks and deadlines."
+        )
+        return
+
+    # Priority 3: brain dump
     await update.message.reply_text("⏳ On it...")
     from app.telegram.db_helpers import process_dump_for_chat_id
     tasks = await process_dump_for_chat_id(chat_id, text)

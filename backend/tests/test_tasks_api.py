@@ -1,5 +1,6 @@
 import pytest
 import uuid
+from datetime import datetime
 from fastapi.testclient import TestClient
 from unittest.mock import patch
 from sqlalchemy.orm import sessionmaker
@@ -68,7 +69,7 @@ def test_add_single_task(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["title"] == "Study for exam"
-    assert data["status"] == "pending"
+    assert data["status"] in {"pending", "scheduled"}
     assert data["priority_index"] is not None
     assert data["priority_index"] > 0
 
@@ -116,3 +117,89 @@ def test_complete_task(client):
     resp = client.post(f"/api/tasks/{task_id}/complete")
     assert resp.status_code == 200
     assert resp.json()["status"] == "completed"
+
+
+def test_get_task_by_id_returns_extended_fields(client):
+    create_resp = client.post("/api/tasks", json={
+        "title": "Read chapter 4",
+        "effort": "medium",
+        "importance": 5
+    })
+    task_id = create_resp.json()["id"]
+
+    resp = client.get(f"/api/tasks/{task_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == task_id
+    assert data["notes"] is None
+    assert data["urgency_score"] is not None
+    assert data["importance_score"] is not None
+    assert isinstance(data["scheduled_today"], bool)
+
+
+def test_patch_task_updates_matrix_and_notes(client):
+    create_resp = client.post("/api/tasks", json={
+        "title": "Original task",
+        "effort": "low",
+        "importance": 2
+    })
+    task_id = create_resp.json()["id"]
+
+    resp = client.patch(f"/api/tasks/{task_id}", json={
+        "title": "Updated task",
+        "effort": "high",
+        "notes": "Needs a deeper work block",
+        "urgency_score": 82,
+        "importance_score": 91
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["title"] == "Updated task"
+    assert data["effort"] == "high"
+    assert data["notes"] == "Needs a deeper work block"
+    assert data["urgency_score"] == 82
+    assert data["importance_score"] == 91
+
+
+def test_delete_task_removes_it(client):
+    create_resp = client.post("/api/tasks", json={
+        "title": "Delete me",
+        "effort": "low",
+        "importance": 1
+    })
+    task_id = create_resp.json()["id"]
+
+    delete_resp = client.delete(f"/api/tasks/{task_id}")
+    assert delete_resp.status_code == 200
+    assert delete_resp.json()["ok"] is True
+
+    fetch_resp = client.get(f"/api/tasks/{task_id}")
+    assert fetch_resp.status_code == 404
+
+
+def test_list_tasks_marks_scheduled_today(client):
+    create_resp = client.post("/api/tasks", json={
+        "title": "Scheduled task",
+        "effort": "medium",
+        "importance": 4
+    })
+    task_id = create_resp.json()["id"]
+
+    db = TestingSession()
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        block = ScheduleBlock(
+            task_id=task.id,
+            user_id=TASKS_USER_ID,
+            start_time=datetime.utcnow().replace(hour=10, minute=0, second=0, microsecond=0),
+            end_time=datetime.utcnow().replace(hour=12, minute=0, second=0, microsecond=0),
+        )
+        db.add(block)
+        db.commit()
+    finally:
+        db.close()
+
+    resp = client.get("/api/tasks")
+    assert resp.status_code == 200
+    scheduled = next(item for item in resp.json() if item["id"] == task_id)
+    assert scheduled["scheduled_today"] is True

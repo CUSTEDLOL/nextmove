@@ -48,9 +48,39 @@ def _dependency_score(count: int) -> float:
     return min(count * 2.5, 10.0)
 
 
-def score_task(task: TaskInput) -> float:
-    U = _urgency_score(task.deadline)
-    I = _importance_score(task.importance)
-    E = _effort_score(task.effort)
-    D = _dependency_score(task.dependency_count)
+def urgency_score(deadline: Optional[datetime]) -> float:
+    return round(_urgency_score(deadline), 2)
+
+
+def importance_score(importance: int) -> float:
+    return round(_importance_score(importance), 2)
+
+
+def normalized_urgency_score(deadline: Optional[datetime]) -> float:
+    return round(urgency_score(deadline) * 10, 2)
+
+
+def normalized_importance_score(importance: int) -> float:
+    return round(importance_score(importance) * 10, 2)
+
+
+def score_task_from_matrix(
+    urgency_score_value: float,
+    importance_score_value: float,
+    effort: str = "medium",
+    dependency_count: int = 0,
+) -> float:
+    U = urgency_score_value / 10
+    I = importance_score_value / 10
+    E = _effort_score(effort)
+    D = _dependency_score(dependency_count)
     return round(0.35 * U + 0.30 * I + 0.20 * E + 0.15 * D, 2)
+
+
+def score_task(task: TaskInput) -> float:
+    return score_task_from_matrix(
+        normalized_urgency_score(task.deadline),
+        normalized_importance_score(task.importance),
+        effort=task.effort,
+        dependency_count=task.dependency_count,
+    )
