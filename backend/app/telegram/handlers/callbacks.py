@@ -149,7 +149,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             callback_data=f"step_done:{s['id']}"
                         )
                     ])
-            await set_pending_steps(chat_id, task_id)
             await query.message.reply_text(
                 "\n".join(lines),
                 parse_mode="Markdown",
@@ -214,5 +213,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "edit":
-        from app.telegram.handlers.commands import edit_command
-        await edit_command(update, context)
+        from app.telegram.db_helpers import list_tasks_for_chat_id
+        tasks = await list_tasks_for_chat_id(chat_id)
+        if tasks is None:
+            await query.message.reply_text("You're not linked yet.")
+            return
+        if not tasks:
+            await query.message.reply_text("📭 No tasks to edit.")
+            return
+        buttons = [
+            [InlineKeyboardButton(
+                t.title[:40] + ("…" if len(t.title) > 40 else ""),
+                callback_data=f"edit_select:{t.id}"
+            )]
+            for t in tasks
+        ]
+        await query.message.reply_text(
+            "✏️ Which task do you want to edit?",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
