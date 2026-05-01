@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from app.database import SessionLocal
 from app.models import User, Task
 from app.services.task_service import ACTIVE_TASK_STATUSES
+from app.telegram.utils import esc as _esc
 
 
 async def ping_procrastinating_users():
@@ -53,10 +54,10 @@ async def ping_procrastinating_users():
             await app.bot.send_message(
                 chat_id=chat_id,
                 text=(
-                    f"👀 Hey — *{task.title}* has been sitting on your plate for {days_old} days.\n\n"
-                    f"Still relevant? Make a move on it or skip it."
+                    f"👀 Hey — *{_esc(task.title)}* has been sitting on your plate for {days_old} days\\.\n\n"
+                    f"Still relevant\\? Make a move on it or skip it\\."
                 ),
-                parse_mode="Markdown",
+                parse_mode="MarkdownV2",
                 reply_markup=keyboard,
             )
     finally:

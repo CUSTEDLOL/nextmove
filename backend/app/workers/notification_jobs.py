@@ -30,7 +30,7 @@ async def _send_telegram_message(chat_id: int, text: str) -> None:
         logger.warning("Notification bot not set — skipping message to %s", chat_id)
         return
     try:
-        await _bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
+        await _bot.send_message(chat_id=chat_id, text=text, parse_mode="MarkdownV2")
     except Exception as e:
         logger.error("Failed to send Telegram message to %s: %s", chat_id, e)
 
