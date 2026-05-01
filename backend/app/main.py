@@ -45,6 +45,22 @@ async def shutdown_telegram_bot(tg_app):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.config import settings
+    import os
+    _is_prod = os.getenv("ENV", "dev") != "dev"
+
+    if settings.jwt_secret_key == "dev-secret-change-in-production":
+        if _is_prod:
+            raise RuntimeError("JWT_SECRET_KEY must be set to a secure value in production")
+        else:
+            logger.warning("Using default JWT secret — DO NOT use in production")
+
+    if not settings.fernet_key.strip():
+        if _is_prod:
+            raise RuntimeError("FERNET_KEY must be set in production to encrypt OAuth tokens")
+        else:
+            logger.warning("FERNET_KEY not set — using dev key for token encryption. DO NOT use in production")
+
     from app.workers import notification_jobs
 
     tg_app = await initialize_telegram_bot()
@@ -78,9 +94,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="NextMove API", version="0.1.0", lifespan=lifespan)
 
+import os as _os
+_cors_origins = [o.strip() for o in _os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
