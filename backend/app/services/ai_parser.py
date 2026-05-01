@@ -2,10 +2,7 @@ import json
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
-from openai import AsyncOpenAI
-from app.config import settings
-
-openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+from app.services.openai_client import get_openai_client
 
 
 class ParsedTask(BaseModel):
@@ -38,7 +35,7 @@ async def parse_brain_dump(text: str, user_timezone: str = "UTC") -> list[Parsed
     today = datetime.utcnow().strftime("%Y-%m-%d")
     user_message = f"Today's date: {today}. Timezone: {user_timezone}.\n\nUser text: {text}"
 
-    response = await openai_client.chat.completions.create(
+    response = await get_openai_client().chat.completions.create(
         model="gpt-4o",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},

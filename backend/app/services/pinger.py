@@ -5,6 +5,7 @@ sends a Telegram nudge to the user.
 from datetime import datetime, timedelta
 from app.database import SessionLocal
 from app.models import User, Task
+from app.services.task_service import ACTIVE_TASK_STATUSES
 
 
 async def ping_procrastinating_users():
@@ -16,7 +17,7 @@ async def ping_procrastinating_users():
             db.query(Task)
             .join(User, Task.user_id == User.id)
             .filter(
-                Task.status.in_(["pending", "scheduled", "in_progress"]),
+                Task.status.in_(ACTIVE_TASK_STATUSES),
                 Task.parent_task_id.is_(None),   # top-level only
                 Task.created_at <= cutoff,
                 User.telegram_chat_id.isnot(None),

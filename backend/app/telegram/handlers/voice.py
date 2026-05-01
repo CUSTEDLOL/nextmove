@@ -5,7 +5,7 @@ from telegram.ext import ContextTypes
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.telegram.db_helpers import process_dump_for_chat_id, get_pending_steps_task_id
-    from app.telegram.intent import _get_openai_client
+    from app.services.openai_client import get_openai_client as _get_openai_client
 
     chat_id = update.effective_chat.id
     await update.message.reply_text("🎙️ Transcribing your voice note...")
