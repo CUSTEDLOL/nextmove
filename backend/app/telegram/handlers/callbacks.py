@@ -2,6 +2,21 @@ from datetime import datetime, timedelta, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from app.telegram.utils import esc as _esc
+from app.telegram.handlers.today import today_command
+from app.telegram.handlers.commands import list_command
+from app.telegram.db_helpers import (
+    complete_task_for_chat_id,
+    delete_task_for_chat_id,
+    get_task_for_chat_id,
+    reschedule_task_for_chat_id,
+    start_task_for_chat_id,
+    get_steps_for_chat_id,
+    set_pending_steps,
+    complete_step_for_chat_id,
+    why_task_for_chat_id,
+    list_tasks_for_chat_id,
+    set_pending_edit,
+)
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -11,11 +26,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     if data == "today":
-        from app.telegram.handlers.today import today_command
         await today_command(update, context)
 
     elif data == "tasks":
-        from app.telegram.handlers.commands import list_command
         await list_command(update, context)
 
     elif data == "dump":
@@ -26,11 +39,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---- Done ---------------------------------------------------------------
     elif data.startswith("done:"):
         task_id = data.split(":", 1)[1]
-        from app.telegram.db_helpers import complete_task_for_chat_id
         ok = await complete_task_for_chat_id(chat_id, task_id)
         if ok:
             await query.edit_message_text("✅ Done\\! Great work 💪", parse_mode="MarkdownV2")
-            from app.telegram.handlers.today import today_command
             await today_command(update, context)
         else:
             await query.edit_message_text("⚠️ Couldn't find that task\\.", parse_mode="MarkdownV2")
@@ -38,7 +49,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---- Skip (confirmation flow) -------------------------------------------
     elif data.startswith("skip:"):
         task_id = data.split(":", 1)[1]
-        from app.telegram.db_helpers import get_task_for_chat_id
         task = await get_task_for_chat_id(chat_id, task_id)
         title = task.title if task else "this task"
         await query.message.reply_text(
@@ -54,11 +64,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("skip_confirm:"):
         task_id = data.split(":", 1)[1]
-        from app.telegram.db_helpers import delete_task_for_chat_id
         ok = await delete_task_for_chat_id(chat_id, task_id)
         if ok:
             await query.edit_message_text("🗑️ Removed\\. What's next?", parse_mode="MarkdownV2")
-            from app.telegram.handlers.today import today_command
             await today_command(update, context)
         else:
             await query.edit_message_text("⚠️ Couldn't remove that task\\.", parse_mode="MarkdownV2")
@@ -69,7 +77,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---- Reschedule (pick date flow) ----------------------------------------
     elif data.startswith("reschedule:"):
         task_id = data.split(":", 1)[1]
-        from app.telegram.db_helpers import get_task_for_chat_id
         task = await get_task_for_chat_id(chat_id, task_id)
         title = task.title if task else "this task"
         now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -93,7 +100,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _, task_id, offset_str = data.split(":", 2)
         offset_days = int(offset_str)
         new_deadline = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=offset_days)
-        from app.telegram.db_helpers import reschedule_task_for_chat_id
         task = await reschedule_task_for_chat_id(chat_id, task_id, new_deadline)
         if task:
             label = _esc(new_deadline.strftime("%A %b %d"))
@@ -101,7 +107,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ *{_esc(task.title)}* pushed to {label}\\.",
                 parse_mode="MarkdownV2"
             )
-            from app.telegram.handlers.today import today_command
             await today_command(update, context)
         else:
             await query.edit_message_text("⚠️ Couldn't reschedule that task\\.", parse_mode="MarkdownV2")
@@ -109,7 +114,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---- Start task ---------------------------------------------------------
     elif data.startswith("start:"):
         task_id = data.split(":", 1)[1]
-        from app.telegram.db_helpers import start_task_for_chat_id
         task = await start_task_for_chat_id(chat_id, task_id)
         if task:
             await query.edit_message_text(
@@ -122,7 +126,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---- Steps --------------------------------------------------------------
     elif data.startswith("steps:"):
         task_id = data.split(":", 1)[1]
-        from app.telegram.db_helpers import get_steps_for_chat_id, set_pending_steps
         result = await get_steps_for_chat_id(chat_id, task_id)
         if result is None:
             await query.answer("Couldn't find that task.", show_alert=True)
@@ -158,7 +161,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("step_done:"):
         step_id = data.split(":", 1)[1]
-        from app.telegram.db_helpers import complete_step_for_chat_id
         ok = await complete_step_for_chat_id(chat_id, step_id)
         if ok:
             await query.edit_message_text("✅ Step done\\!", parse_mode="MarkdownV2")
@@ -168,7 +170,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---- Why? ---------------------------------------------------------------
     elif data.startswith("why:"):
         task_id = data.split(":", 1)[1]
-        from app.telegram.db_helpers import why_task_for_chat_id
         explanation = await why_task_for_chat_id(chat_id, task_id)
         await query.message.reply_text(
             _esc(explanation) if explanation else "Couldn't explain that task\\.",
@@ -178,7 +179,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---- Task actions (from /list) ------------------------------------------
     elif data.startswith("task_actions:"):
         task_id = data.split(":", 1)[1]
-        from app.telegram.db_helpers import get_task_for_chat_id
         task = await get_task_for_chat_id(chat_id, task_id)
         if not task:
             await query.answer("Task not found.", show_alert=True)
@@ -202,7 +202,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---- Edit ---------------------------------------------------------------
     elif data.startswith("edit_select:"):
         task_id = data.split(":", 1)[1]
-        from app.telegram.db_helpers import set_pending_edit, get_task_for_chat_id
         task = await get_task_for_chat_id(chat_id, task_id)
         title = task.title if task else "that task"
         await set_pending_edit(chat_id, task_id)
@@ -214,7 +213,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "edit":
-        from app.telegram.db_helpers import list_tasks_for_chat_id
         tasks = await list_tasks_for_chat_id(chat_id)
         if tasks is None:
             await query.message.reply_text("You're not linked yet\\.", parse_mode="MarkdownV2")
