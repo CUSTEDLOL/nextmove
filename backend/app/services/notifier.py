@@ -25,21 +25,6 @@ def build_morning_brief(
     return "\n".join(lines)
 
 
-def build_procrastination_prompt(task: TaskResponse) -> str:
-    return (
-        f"👀 Hey — you were supposed to start *{esc(task.title)}* a while ago\\.\n\n"
-        f"What's going on\\?\n\n"
-        f"\\[✅ I'm on it\\]  \\[🤔 I'm stuck\\]  \\[📅 Reschedule\\]"
-    )
-
-
-def build_pretask_nudge(task: TaskResponse) -> str:
-    return (
-        f"⏰ *Starting in 15 minutes:*\n{esc(task.title)}\n\n"
-        f"Clear your space, silence your phone, and get ready\\. You've got this\\."
-    )
-
-
 def build_evening_wrapup(completed_count: int, missed_count: int) -> str:
     if completed_count == 0 and missed_count == 0:
         return "🌙 *Evening check\\-in:* No tasks were scheduled today\\. Start fresh tomorrow\\!"
