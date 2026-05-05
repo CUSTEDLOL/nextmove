@@ -1,6 +1,10 @@
 from typing import Optional
+from telegram.helpers import escape_markdown
 from app.schemas.tasks import TaskResponse
-from app.telegram.utils import esc
+
+
+def _esc(text: str) -> str:
+    return escape_markdown(text, version=2)
 
 
 def build_morning_brief(
@@ -8,21 +12,36 @@ def build_morning_brief(
     primary: Optional[TaskResponse],
     secondary: list[TaskResponse]
 ) -> str:
-    greeting = f"Good morning, {esc(name)}\\! ☀️\n\n"
+    greeting = f"Good morning, {_esc(name)}\\! ☀️\n\n"
     if not primary:
         return greeting + "You have no pending tasks today — enjoy the clear schedule\\! 🎉\nAdd tasks anytime with /dump\\."
 
-    lines = [greeting, f"🎯 *Today's focus:*\n*{esc(primary.title)}*"]
+    lines = [greeting, f"🎯 *Today's focus:*\n*{_esc(primary.title)}*"]
     if primary.effort:
-        lines.append(f"   ⚡ Effort: {esc(primary.effort.capitalize())}")
+        lines.append(f"   ⚡ Effort: {_esc(primary.effort.capitalize())}")
     if primary.deadline:
-        lines.append(f"   📅 Due: {esc(primary.deadline.strftime('%a %b %d'))}")
+        lines.append(f"   📅 Due: {_esc(primary.deadline.strftime('%a %b %d'))}")
     if secondary:
         lines.append("\n📋 *Also scheduled:*")
         for t in secondary:
-            lines.append(f"   • {esc(t.title)}")
+            lines.append(f"   • {_esc(t.title)}")
     lines.append("\nYou've got this\\! Use /done when finished\\. 💪")
     return "\n".join(lines)
+
+
+def build_procrastination_prompt(task: TaskResponse) -> str:
+    return (
+        f"👀 Hey — you were supposed to start *{_esc(task.title)}* a while ago\\.\n\n"
+        f"What's going on?\n\n"
+        f"\\[✅ I'm on it\\]  \\[🤔 I'm stuck\\]  \\[📅 Reschedule\\]"
+    )
+
+
+def build_pretask_nudge(task: TaskResponse) -> str:
+    return (
+        f"⏰ *Starting in 15 minutes:*\n{_esc(task.title)}\n\n"
+        f"Clear your space, silence your phone, and get ready\\. You've got this\\."
+    )
 
 
 def build_evening_wrapup(completed_count: int, missed_count: int) -> str:
@@ -44,10 +63,10 @@ def build_weekly_summary(
     missed: int,
     best_days: list[str]
 ) -> str:
-    lines = [f"📊 *Weekly summary for {esc(name)}:*\n"]
+    lines = [f"📊 *Weekly summary for {_esc(name)}:*\n"]
     lines.append(f"✅ Completed: {completed} tasks")
     lines.append(f"⏭️ Missed: {missed} tasks")
     if best_days:
-        lines.append(f"🏆 Most productive: {esc(', '.join(best_days))}")
+        lines.append(f"🏆 Most productive: {_esc(', '.join(best_days))}")
     lines.append("\nNext week's schedule is ready\\. Use /today to see what's first\\.")
     return "\n".join(lines)

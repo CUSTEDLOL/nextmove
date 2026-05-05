@@ -3,7 +3,8 @@ APScheduler jobs for proactive Telegram notifications.
 Scheduled in main.py lifespan alongside the existing pinger job.
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.database import SessionLocal
 from app.models.user import User
@@ -18,6 +19,24 @@ from app.services.notifier import (
 logger = logging.getLogger(__name__)
 
 _bot = None  # Set at startup via set_bot()
+
+
+def _user_day_bounds_utc(user: User, now: datetime) -> tuple[datetime, datetime]:
+    """Return (today_start, tomorrow_start) as naive UTC for the user's local timezone.
+
+    Mirrors the same helper in pinger.py so each job respects the user's local day
+    boundary rather than always using UTC midnight.
+    """
+    try:
+        tz = ZoneInfo(user.timezone or "UTC")
+    except ZoneInfoNotFoundError:
+        tz = ZoneInfo("UTC")
+    utc = ZoneInfo("UTC")
+    local_now = now.replace(tzinfo=utc).astimezone(tz)
+    local_today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_utc = local_today.astimezone(utc).replace(tzinfo=None)
+    tomorrow_utc = (local_today + timedelta(days=1)).astimezone(utc).replace(tzinfo=None)
+    return today_utc, tomorrow_utc
 
 
 def set_bot(bot) -> None:
@@ -56,10 +75,9 @@ async def morning_brief_job() -> None:
 
 
 async def evening_wrapup_job() -> None:
-    """21:00 UTC daily: Report completed vs missed tasks today."""
+    """21:00 UTC daily: Report completed vs missed tasks today (in each user's local timezone)."""
     logger.info("Running evening_wrapup_job")
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    tomorrow_start = today_start + timedelta(days=1)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     with SessionLocal() as db:
         users = db.query(User).filter(User.telegram_chat_id.isnot(None)).all()
@@ -67,6 +85,8 @@ async def evening_wrapup_job() -> None:
             if not user.telegram_chat_id:
                 continue
             try:
+                # Use the user's local timezone to determine their day boundary.
+                today_start, tomorrow_start = _user_day_bounds_utc(user, now)
                 completed = (
                     db.query(Task)
                     .filter(
@@ -96,9 +116,9 @@ async def evening_wrapup_job() -> None:
 
 
 async def weekly_summary_job() -> None:
-    """19:00 UTC Sunday: Weekly wrap-up stats."""
+    """19:00 UTC Sunday: Weekly wrap-up stats (week boundary in each user's local timezone)."""
     logger.info("Running weekly_summary_job")
-    week_start = datetime.utcnow() - timedelta(days=7)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     with SessionLocal() as db:
         users = db.query(User).filter(User.telegram_chat_id.isnot(None)).all()
@@ -106,6 +126,9 @@ async def weekly_summary_job() -> None:
             if not user.telegram_chat_id:
                 continue
             try:
+                # Compute the user's local "today" start and go back 7 days for the week boundary.
+                today_start, _ = _user_day_bounds_utc(user, now)
+                week_start = today_start - timedelta(days=7)
                 completed = (
                     db.query(Task)
                     .filter(

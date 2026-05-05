@@ -4,6 +4,7 @@ from app.database import get_db
 from app.models import User
 from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, GoogleExchangeRequest
 from app.services.auth import hash_password, verify_password, create_access_token
+from app.services.google_auth import exchange_code_for_user_info
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -35,24 +36,32 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/google/exchange", response_model=TokenResponse)
 def google_exchange(req: GoogleExchangeRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == req.email).first()
+    try:
+        google_info = exchange_code_for_user_info(req.code, req.redirect_uri)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    # Email is from the verified id_token — not supplied by the caller.
+    verified_email: str = google_info["email"]
+
+    user = db.query(User).filter(User.email == verified_email).first()
     if not user:
         user = User(
-            email=req.email,
-            name=req.name or req.email.split("@")[0],
+            email=verified_email,
+            name=google_info.get("name") or verified_email.split("@")[0],
             timezone=req.timezone,
         )
         db.add(user)
         db.flush()
     else:
-        if req.name:
-            user.name = req.name
+        if google_info.get("name"):
+            user.name = google_info["name"]
         if req.timezone:
             user.timezone = req.timezone
 
-    user.google_access_token = req.access_token
-    if req.refresh_token:
-        user.google_refresh_token = req.refresh_token
+    user.google_access_token = google_info["access_token"]
+    if google_info.get("refresh_token"):
+        user.google_refresh_token = google_info["refresh_token"]
     user.uses_google_calendar = True
     db.commit()
     db.refresh(user)

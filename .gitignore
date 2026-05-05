@@ -13,3 +13,5 @@ node_modules/
 *.log
 .DS_Store
 .worktrees/
+client_secret_*.json
+*.json.secret

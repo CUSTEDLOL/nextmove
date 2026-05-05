@@ -3,16 +3,21 @@ Shared business logic for tasks.
 Used by both routers/tasks.py and telegram/db_helpers.py.
 Never import routers here — this layer has no HTTP concepts.
 """
-from datetime import datetime, timedelta
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from app.models.task import Task
+from app.models.schedule import ScheduleBlock
 from app.models.user import User
 from app.schemas.tasks import TaskResponse, TodayResponse
 from app.services.matrix_scorer import score_task, TaskInput
 from app.services.ai_parser import parse_brain_dump
 from app.services.schedule_runner import run_schedule_for_user
+
+logger = logging.getLogger(__name__)
 
 ACTIVE_TASK_STATUSES = ["pending", "scheduled", "in_progress"]
 
@@ -40,7 +45,7 @@ def apply_task_scores(task: Task, *, recompute: bool = False) -> None:
 def generate_why(task: Task) -> str:
     reasons = []
     if task.deadline:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         days = (task.deadline - now).days
         if days < 0:
             reasons.append(f"it's already overdue by {abs(days)} day{'s' if abs(days) != 1 else ''}")
@@ -92,8 +97,24 @@ def serialize_task(task: Task, db: Session, *, include_steps: bool = True) -> Ta
             .all()
         )
         steps = [serialize_task(s, db, include_steps=False) for s in child_steps]
+
+    # C-1: Determine whether any schedule block for this task falls within today (UTC).
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow_start = today_start + timedelta(days=1)
+    scheduled_today = (
+        db.query(ScheduleBlock.id)
+        .filter(
+            ScheduleBlock.task_id == task.id,
+            ScheduleBlock.start_time < tomorrow_start,
+            ScheduleBlock.end_time > today_start,
+        )
+        .first()
+    ) is not None
+
     result = TaskResponse.model_validate(task)
     result.steps = steps
+    result.scheduled_today = scheduled_today
     return result
 
 
@@ -275,6 +296,14 @@ def complete_step(db: Session, user: User, step_id: str) -> bool:
         return False
     step.status = "completed"
     db.commit()
+
+    # H-12: Recompute priority on the parent task now that one of its steps is done.
+    parent_task = db.query(Task).filter(Task.id == step.parent_task_id).first()
+    if parent_task:
+        apply_task_scores(parent_task, recompute=True)
+        db.commit()
+        run_schedule_for_user(user, db)
+
     return True
 
 
@@ -292,9 +321,36 @@ async def process_brain_dump(
     db: Session, user: User, text: str
 ) -> list[TaskResponse]:
     parsed = await parse_brain_dump(text, user_timezone=user.timezone)
+
+    # H-6: Interpret naive deadlines from the AI as local midnight in user's timezone,
+    # then convert to naive UTC for storage (DB columns are naive DateTime).
+    tz = ZoneInfo(user.timezone or "UTC")
+
     tasks_to_add = []
+    all_titles = {p.title for p in parsed}
+
     for p in parsed:
-        deadline = datetime.fromisoformat(p.deadline) if p.deadline else None
+        deadline: Optional[datetime] = None
+        if p.deadline:
+            raw_dl = datetime.fromisoformat(p.deadline)
+            if raw_dl.tzinfo is None:
+                # Treat as local time in user's timezone and convert to UTC.
+                deadline = raw_dl.replace(tzinfo=tz).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+            else:
+                deadline = raw_dl.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+
+        # H-7: Count how many of this task's declared dependencies are present in
+        # this same brain dump (as a proxy for blocking-task weight).
+        dep_count = sum(1 for dep in p.dependencies if dep in all_titles)
+        if p.dependencies and not hasattr(Task, "dependency_count"):
+            logger.debug(
+                "Task '%s' has %d dependencies %s — Task model has no dependency_count column; "
+                "dependency weight applied via priority scorer only.",
+                p.title,
+                len(p.dependencies),
+                p.dependencies,
+            )
+
         task = Task(
             user_id=user.id,
             title=p.title,
@@ -305,7 +361,13 @@ async def process_brain_dump(
             context=p.context,
             status="pending",
         )
-        apply_task_scores(task, recompute=True)
+        # Score with dependency count derived from this dump.
+        task.priority_index = score_task(TaskInput(
+            deadline=task.deadline,
+            effort=task.effort or "medium",
+            importance=task.importance or 3,
+            dependency_count=dep_count,
+        ))
         tasks_to_add.append((task, p))
 
     for task, _ in tasks_to_add:

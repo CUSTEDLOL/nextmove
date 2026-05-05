@@ -1,8 +1,25 @@
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from telegram.helpers import escape_markdown
 from app.database import SessionLocal
 from app.models import User
-from app.telegram.utils import esc as _esc
+from app.telegram import link_service
+
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+_CODE_RE = re.compile(r"^\d{6}$")
+
+
+def _looks_like_email(text: str) -> bool:
+    return bool(_EMAIL_RE.match(text.strip()))
+
+
+def _looks_like_link_code(text: str) -> bool:
+    return bool(_CODE_RE.match(text.strip()))
+
+
+def _esc(text: str) -> str:
+    return escape_markdown(text, version=2)
 
 
 def _get_user_by_chat_id(chat_id: int):
@@ -20,9 +37,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = _get_user_by_chat_id(chat_id)
 
-    # Unlinked user — check if they sent their email
+    # Unlinked user — code check takes priority over email check
     if not user:
-        if "@" in text and "." in text:
+        if _looks_like_link_code(text):
+            await _handle_link_code(update, text, chat_id)
+        elif _looks_like_email(text):
             await _handle_email_link(update, text, chat_id)
         else:
             await update.message.reply_text(
@@ -60,7 +79,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from app.telegram.db_helpers import apply_task_edit, clear_pending_edit
         from app.services.ai_editor import parse_edit_instruction
         try:
-            edit = await parse_edit_instruction(text)
+            try:
+                edit = await parse_edit_instruction(text)
+            except Exception:
+                await update.message.reply_text("Sorry, I couldn't process that edit\\. Please try again\\.", parse_mode="MarkdownV2")
+                return
             if edit is None:
                 await update.message.reply_text(
                     "🤔 Couldn't understand that edit\\.\n"
@@ -78,10 +101,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     msg = f"✅ Renamed to *{_esc(edit['value'])}*\\."
                 await update.message.reply_text(msg, parse_mode="MarkdownV2")
             else:
-                await update.message.reply_text(
-                    "⚠️ Couldn't apply that edit\\. The task may have been deleted\\.",
-                    parse_mode="MarkdownV2",
-                )
+                await update.message.reply_text("⚠️ Couldn't apply that edit\\. The task may have been deleted\\.", parse_mode="MarkdownV2")
         finally:
             await clear_pending_edit(chat_id)
         return
@@ -90,8 +110,48 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.telegram import intent as intent_module
     intent = await intent_module.classify_intent(text, has_pending_steps=False)
 
-    from app.telegram.handlers.dispatch import dispatch_intent
-    if await dispatch_intent(intent, text, chat_id, update, context):
+    if intent == "add_task":
+        from app.telegram.db_helpers import add_single_task_for_chat_id
+        task = await add_single_task_for_chat_id(chat_id, text)
+        if task:
+            deadline_str = f" — due {_esc(task.deadline.strftime('%a %b %d'))}" if task.deadline else ""
+            await update.message.reply_text(
+                f"✅ Added: *{_esc(task.title)}*{deadline_str}\n\nUse /today to see your priority\\.",
+                parse_mode="MarkdownV2",
+            )
+        else:
+            await update.message.reply_text(
+                "🤔 Couldn't parse that\\. Try: _'add essay due Friday'_",
+                parse_mode="MarkdownV2",
+            )
+        return
+
+    if intent == "complete":
+        from app.telegram.handlers.commands import done_command
+        await done_command(update, context)
+        return
+
+    if intent == "skip":
+        from app.telegram.handlers.commands import skip_command
+        await skip_command(update, context)
+        return
+
+    if intent == "today":
+        from app.telegram.handlers.today import today_command
+        await today_command(update, context)
+        return
+
+    if intent == "list":
+        from app.telegram.handlers.commands import list_command
+        await list_command(update, context)
+        return
+
+    if intent == "unclear":
+        await update.message.reply_text(
+            "🤔 Not sure what to do with that\\.\n\n"
+            "Try: _'essay due Friday'_ to add tasks, or use /menu to see all options\\.",
+            parse_mode="MarkdownV2",
+        )
         return
 
     # Default: brain dump
@@ -113,33 +173,64 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("\n".join(lines), parse_mode="MarkdownV2")
 
 
-async def _handle_email_link(update, email: str, chat_id: int):
-    db = SessionLocal()
-    try:
+async def _handle_email_link(update, email: str, chat_id: int) -> None:
+    """
+    Stage 1 of account linking: receive the email, generate a verification
+    code, and send the same reply regardless of whether the email is
+    registered — prevents user enumeration.
+    """
+    with SessionLocal() as db:
         user = db.query(User).filter(User.email == email.strip().lower()).first()
+        if user:
+            code = link_service.store_link_code(email.strip().lower(), chat_id)
+            link_service.send_link_email(email.strip().lower(), code)
+
+    # Identical reply for both found and not-found — avoids email enumeration.
+    await update.effective_message.reply_text(
+        "📬 If that email is registered, a 6\\-digit code has been sent to it\\.\n\n"
+        "Reply with the code to link your account\\. "
+        "It expires in 10 minutes\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+async def _handle_link_code(update, code: str, chat_id: int) -> None:
+    """
+    Stage 2 of account linking: verify the code and link the Telegram chat
+    to the user's account.
+    """
+    email = link_service.verify_and_consume_link_code(code, chat_id)
+    if not email:
+        await update.effective_message.reply_text(
+            "❌ That code is invalid or has expired\\.\n\n"
+            "Send your email again to get a new code\\.",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == email).first()
         if not user:
+            # Code was valid but user vanished — shouldn't happen in normal flow
             await update.effective_message.reply_text(
-                "📬 If that email is registered, your account is now linked\\. "
-                "If nothing happens, make sure you've signed up at the web app first\\.",
+                "⚠️ Something went wrong\\. Please try again or contact support\\.",
                 parse_mode="MarkdownV2",
             )
             return
         user.telegram_chat_id = chat_id
         db.commit()
-    finally:
-        db.close()
 
     await update.effective_message.reply_text(
-        "📬 If that email is registered, your account is now linked\\. "
-        "If nothing happens, make sure you've signed up at the web app first\\.",
+        "✅ Your account has been linked\\! You can now use all NextMove features here\\.",
         parse_mode="MarkdownV2",
     )
+    name = getattr(user, "name", None) or "there"
     await update.effective_message.reply_text(
-        f"✅ You're all set, *{_esc(user.name or 'there')}*\\! What do you want to do?",
+        f"👋 Welcome back, *{_esc(name)}*\\! What do you want to do?",
         parse_mode="MarkdownV2",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎯 Today's task", callback_data="today")],
             [InlineKeyboardButton("🧠 Brain dump", callback_data="dump")],
             [InlineKeyboardButton("✅ All tasks", callback_data="tasks")],
-        ])
+        ]),
     )

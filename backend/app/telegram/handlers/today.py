@@ -1,8 +1,13 @@
 from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from telegram.helpers import escape_markdown
 from app.schemas.tasks import TaskResponse
 from app.telegram.utils import esc as _esc
+
+
+def _esc(text: str) -> str:
+    return escape_markdown(text, version=2)
 
 
 def format_today_message(primary: Optional[TaskResponse], secondary: list[TaskResponse]) -> str:

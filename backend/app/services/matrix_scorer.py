@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from pydantic import BaseModel
 
@@ -13,10 +13,10 @@ class TaskInput(BaseModel):
 
 
 def _urgency_score(deadline: Optional[datetime]) -> float:
-    """0-10. Higher = more urgent. Overdue = 10."""
+    """0-10 scale. Higher = more urgent. Overdue = 10."""
     if deadline is None:
         return 3.0
-    hours_remaining = (deadline - datetime.utcnow()).total_seconds() / 3600
+    hours_remaining = (deadline - datetime.now(timezone.utc).replace(tzinfo=None)).total_seconds() / 3600
     if hours_remaining <= 0:
         return 10.0
     elif hours_remaining <= 24:
@@ -34,34 +34,40 @@ def _urgency_score(deadline: Optional[datetime]) -> float:
 
 
 def _importance_score(importance: int) -> float:
-    """Maps 1-5 → 0-10."""
+    """Maps 1-5 → 0-10 scale."""
     return (importance - 1) / 4 * 10
 
 
 def _effort_score(effort: str) -> float:
-    """High effort tasks get higher score so they're not buried."""
+    """High effort tasks get higher score so they're not buried. 0-10 scale."""
     return float(EFFORT_MAP.get(effort, 5))
 
 
 def _dependency_score(count: int) -> float:
-    """Tasks blocking other tasks get priority."""
+    """Tasks blocking other tasks get priority. 0-10 scale."""
     return min(count * 2.5, 10.0)
 
 
 def urgency_score(deadline: Optional[datetime]) -> float:
+    """Returns urgency on a 0-10 scale."""
     return round(_urgency_score(deadline), 2)
 
 
 def importance_score(importance: int) -> float:
+    """Returns importance on a 0-10 scale."""
     return round(_importance_score(importance), 2)
 
 
+# NOTE: normalized_*_score functions return 0-10 (same scale as the raw scores).
+# The "normalized" prefix is kept for API compatibility but no longer means ×10.
 def normalized_urgency_score(deadline: Optional[datetime]) -> float:
-    return round(urgency_score(deadline) * 10, 2)
+    """Returns urgency on a 0-10 scale (identical to urgency_score; kept for compatibility)."""
+    return urgency_score(deadline)
 
 
 def normalized_importance_score(importance: int) -> float:
-    return round(importance_score(importance) * 10, 2)
+    """Returns importance on a 0-10 scale (identical to importance_score; kept for compatibility)."""
+    return importance_score(importance)
 
 
 def score_task_from_matrix(
@@ -70,10 +76,15 @@ def score_task_from_matrix(
     effort: str = "medium",
     dependency_count: int = 0,
 ) -> float:
-    U = urgency_score_value / 10
-    I = importance_score_value / 10
-    E = _effort_score(effort)
-    D = _dependency_score(dependency_count)
+    """
+    Priority index formula: P = 0.35×U + 0.30×I + 0.20×E + 0.15×D
+    All inputs (U, I, E, D) are expected on a 0-10 scale.
+    Output is a 0-10 priority index.
+    """
+    U = urgency_score_value        # 0-10
+    I = importance_score_value     # 0-10
+    E = _effort_score(effort)      # 0-10
+    D = _dependency_score(dependency_count)  # 0-10
     return round(0.35 * U + 0.30 * I + 0.20 * E + 0.15 * D, 2)
 
 

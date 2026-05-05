@@ -20,13 +20,7 @@ class TokenResponse(BaseModel):
     user_id: Optional[str] = None
 
 
-class GoogleAuthRequest(BaseModel):
-    code: str
-
-
 class GoogleExchangeRequest(BaseModel):
-    email: EmailStr
-    name: Optional[str] = None
-    access_token: str
-    refresh_token: Optional[str] = None
+    code: str
+    redirect_uri: str
     timezone: str = "UTC"

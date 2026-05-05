@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 import uuid
 
@@ -7,8 +7,8 @@ import uuid
 class TaskCreate(BaseModel):
     title: str
     deadline: Optional[datetime] = None
-    effort: str = "medium"
-    importance: int = 3
+    effort: Optional[Literal["low", "medium", "high"]] = "medium"
+    importance: int = Field(default=3, ge=1, le=5)
     context: Optional[str] = "Study"
     notes: Optional[str] = None
 
@@ -16,8 +16,8 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
     deadline: Optional[datetime] = None
-    effort: Optional[str] = None
-    importance: Optional[int] = None
+    effort: Optional[Literal["low", "medium", "high"]] = None
+    importance: Optional[int] = Field(default=None, ge=1, le=5)
     context: Optional[str] = None
     notes: Optional[str] = None
     urgency_score: Optional[float] = None

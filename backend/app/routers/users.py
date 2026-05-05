@@ -35,7 +35,7 @@ def get_me(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return _serialize_user(_load_db_user(db, user.id))
+    return _serialize_user(user)
 
 
 @router.patch("/me", response_model=UserResponse)
@@ -44,7 +44,7 @@ def patch_me(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    db_user = _load_db_user(db, user.id)
+    db_user = user
     updates = req.model_dump(exclude_unset=True)
     should_rebuild_schedule = any(
         key in updates for key in ("study_start_hour", "study_end_hour", "uses_google_calendar")
