@@ -90,48 +90,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.telegram import intent as intent_module
     intent = await intent_module.classify_intent(text, has_pending_steps=False)
 
-    if intent == "add_task":
-        from app.telegram.db_helpers import add_single_task_for_chat_id
-        task = await add_single_task_for_chat_id(chat_id, text)
-        if task:
-            deadline_str = f" — due {_esc(task.deadline.strftime('%a %b %d'))}" if task.deadline else ""
-            await update.message.reply_text(
-                f"✅ Added: *{_esc(task.title)}*{deadline_str}\n\nUse /today to see your priority\\.",
-                parse_mode="MarkdownV2",
-            )
-        else:
-            await update.message.reply_text(
-                "🤔 Couldn't parse that\\. Try: _'add essay due Friday'_",
-                parse_mode="MarkdownV2",
-            )
-        return
-
-    if intent == "complete":
-        from app.telegram.handlers.commands import done_command
-        await done_command(update, context)
-        return
-
-    if intent == "skip":
-        from app.telegram.handlers.commands import skip_command
-        await skip_command(update, context)
-        return
-
-    if intent == "today":
-        from app.telegram.handlers.today import today_command
-        await today_command(update, context)
-        return
-
-    if intent == "list":
-        from app.telegram.handlers.commands import list_command
-        await list_command(update, context)
-        return
-
-    if intent == "unclear":
-        await update.message.reply_text(
-            "🤔 Not sure what to do with that\\.\n\n"
-            "Try: _'essay due Friday'_ to add tasks, or use /menu to see all options\\.",
-            parse_mode="MarkdownV2",
-        )
+    from app.telegram.handlers.dispatch import dispatch_intent
+    if await dispatch_intent(intent, text, chat_id, update, context):
         return
 
     # Default: brain dump
