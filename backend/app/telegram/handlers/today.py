@@ -2,36 +2,38 @@ from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from app.schemas.tasks import TaskResponse
+from app.telegram.utils import esc as _esc
 
 
 def format_today_message(primary: Optional[TaskResponse], secondary: list[TaskResponse]) -> str:
     if not primary:
-        return "✅ All clear! No pending tasks. Send me a brain dump to get started."
+        return "✅ All clear\\! No pending tasks\\. Send me a brain dump to get started\\."
 
-    lines = [f"🎯 *Today's focus:*\n*{primary.title}*"]
+    lines = [f"🎯 *Today's focus:*\n*{_esc(primary.title)}*"]
     if primary.effort:
-        lines.append(f"   ⚡ Effort: {primary.effort.capitalize()}")
+        lines.append(f"   ⚡ Effort: {_esc(primary.effort.capitalize())}")
     if primary.deadline:
-        lines.append(f"   📅 Due: {primary.deadline.strftime('%a %b %d')}")
+        lines.append(f"   📅 Due: {_esc(primary.deadline.strftime('%a %b %d'))}")
 
     if secondary:
         lines.append("\n📋 *Also on deck:*")
         for i, t in enumerate(secondary, 1):
-            lines.append(f"   {i}. {t.title}")
+            lines.append(f"   {i}\\. {_esc(t.title)}")
 
-    lines.append("\n_Say *done* when finished, or just tell me what else is on your plate._")
+    lines.append("\n_Say \\*done\\* when finished, or just tell me what else is on your plate\\._")
     return "\n".join(lines)
 
 
 async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from app.telegram.db_helpers import get_today_for_chat_id
+    from app.telegram.db_helpers import get_today_for_chat_id, clear_pending_state
     chat_id = update.effective_chat.id
+    await clear_pending_state(chat_id)
     result = await get_today_for_chat_id(chat_id)
     target = update.effective_message
     if result is None:
         await target.reply_text(
-            "⚠️ You're not linked yet. Visit the web app to connect your Telegram account.",
-            parse_mode="Markdown"
+            "⚠️ You're not linked yet\\. Visit the web app to connect your Telegram account\\.",
+            parse_mode="MarkdownV2"
         )
         return
     primary, secondary = result
@@ -51,4 +53,4 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("❓ Why?", callback_data=f"why:{primary.id}"),
         ])
     markup = InlineKeyboardMarkup(keyboard) if keyboard else None
-    await target.reply_text(msg, parse_mode="Markdown", reply_markup=markup)
+    await target.reply_text(msg, parse_mode="MarkdownV2", reply_markup=markup)

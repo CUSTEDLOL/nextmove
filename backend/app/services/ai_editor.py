@@ -1,16 +1,6 @@
 import json
 from datetime import datetime, timezone
-from openai import AsyncOpenAI
-from app.config import settings
-
-_openai_client: AsyncOpenAI | None = None
-
-
-def _get_openai_client() -> AsyncOpenAI:
-    global _openai_client
-    if _openai_client is None:
-        _openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
-    return _openai_client
+from app.services.openai_client import get_openai_client as _get_openai_client
 
 
 async def parse_edit_instruction(text: str) -> dict | None:

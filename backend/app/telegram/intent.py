@@ -1,20 +1,10 @@
-from openai import AsyncOpenAI
-from app.config import settings
+from app.services.openai_client import get_openai_client as _get_openai_client
 
 _TODAY = ["today", "what should i", "my priority", "what's next", "what do i do", "schedule", "show me today", "what's on"]
 _COMPLETE = ["done", "finished", "completed", "submitted", "wrapped up", "handed in", "sent it", "just did"]
 _SKIP = ["skip", "push", "reschedule", "postpone", "not today", "not doing", "later", "delay"]
 _LIST = ["list", "all tasks", "show tasks", "show me everything", "everything i have", "all my tasks"]
 _ADD_TASK = ["add ", "remind me", "track ", "don't forget", "new task", "create task"]
-
-_openai_client: AsyncOpenAI | None = None
-
-
-def _get_openai_client() -> AsyncOpenAI:
-    global _openai_client
-    if _openai_client is None:
-        _openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
-    return _openai_client
 
 
 async def classify_intent(text: str, has_pending_steps: bool) -> str:

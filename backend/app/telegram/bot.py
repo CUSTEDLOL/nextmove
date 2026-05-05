@@ -6,9 +6,10 @@ _application: Application | None = None
 
 def create_application() -> Application:
     from app.telegram.handlers.commands import (
-        menu_command, today_command, list_command, dump_command,
+        menu_command, list_command, dump_command,
         done_command, skip_command, edit_command, web_command,
     )
+    from app.telegram.handlers.today import today_command
     from app.telegram.handlers.message import handle_message
     from app.telegram.handlers.callbacks import handle_callback
     from app.telegram.handlers.voice import handle_voice
