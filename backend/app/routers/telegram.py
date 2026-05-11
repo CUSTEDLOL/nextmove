@@ -1,6 +1,10 @@
-from fastapi import APIRouter, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from telegram import Update
+
 from app.config import settings
+from app.dependencies import get_current_user
+from app.models.user import User
+from app.telegram.link_service import store_web_link_token
 
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 
@@ -18,3 +22,14 @@ async def telegram_webhook(
     update = Update.de_json(body, application.bot)
     await application.process_update(update)
     return Response(status_code=200)
+
+
+@router.post("/link-token")
+def create_link_token(current_user: User = Depends(get_current_user)):
+    token = store_web_link_token(str(current_user.id))
+    return {"url": f"https://t.me/{settings.telegram_bot_username}?start={token}"}
+
+
+@router.get("/link-status")
+def link_status(current_user: User = Depends(get_current_user)):
+    return {"linked": current_user.telegram_chat_id is not None}
