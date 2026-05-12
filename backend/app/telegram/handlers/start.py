@@ -39,6 +39,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    user = None
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
