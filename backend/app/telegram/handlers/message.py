@@ -20,16 +20,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = _get_user_by_chat_id(chat_id)
 
-    # Unlinked user — check if they sent their email
+    # Unlinked user — redirect to web app to complete SSO linking
     if not user:
-        if "@" in text and "." in text:
-            await _handle_email_link(update, text, chat_id)
-        else:
-            await update.message.reply_text(
-                "👋 Hey\\! I'm *NextMove*\\.\n\n"
-                "To get started, reply with the email you used to register on the web app:",
-                parse_mode="MarkdownV2",
-            )
+        from app.config import settings
+        await update.message.reply_text(
+            "👋 Connect your account from the web app to get started\\.",
+            parse_mode="MarkdownV2",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🌐 Open NextMove", url=f"{settings.web_url}/settings")
+            ]])
+        )
         return
 
     from app.telegram.db_helpers import get_pending_steps_task_id, get_pending_edit_task_id
@@ -111,35 +111,3 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"• {_esc(t.title)}")
         lines.append("\nUse /today to see your priority\\.")
         await update.message.reply_text("\n".join(lines), parse_mode="MarkdownV2")
-
-
-async def _handle_email_link(update, email: str, chat_id: int):
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.email == email.strip().lower()).first()
-        if not user:
-            await update.effective_message.reply_text(
-                "📬 If that email is registered, your account is now linked\\. "
-                "If nothing happens, make sure you've signed up at the web app first\\.",
-                parse_mode="MarkdownV2",
-            )
-            return
-        user.telegram_chat_id = chat_id
-        db.commit()
-    finally:
-        db.close()
-
-    await update.effective_message.reply_text(
-        "📬 If that email is registered, your account is now linked\\. "
-        "If nothing happens, make sure you've signed up at the web app first\\.",
-        parse_mode="MarkdownV2",
-    )
-    await update.effective_message.reply_text(
-        f"✅ You're all set, *{_esc(user.name or 'there')}*\\! What do you want to do?",
-        parse_mode="MarkdownV2",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎯 Today's task", callback_data="today")],
-            [InlineKeyboardButton("🧠 Brain dump", callback_data="dump")],
-            [InlineKeyboardButton("✅ All tasks", callback_data="tasks")],
-        ])
-    )
