@@ -27,7 +27,6 @@ async def initialize_telegram_bot():
             BotCommand("done",  "Mark top task complete"),
             BotCommand("skip",  "Skip top task"),
             BotCommand("edit",  "Edit or delete a task"),
-            BotCommand("web",   "Open NextMove in browser"),
         ])
     except Exception as exc:  # pragma: no cover - specific cases are covered in tests
         logger.warning("Telegram startup skipped: %s", exc)

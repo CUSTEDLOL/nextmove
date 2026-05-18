@@ -31,7 +31,7 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🧠 Brain dump", callback_data="dump")],
         [InlineKeyboardButton("✅ All tasks", callback_data="tasks")],
         [InlineKeyboardButton("✏️ Edit a task", callback_data="edit")],
-        [InlineKeyboardButton("🌐 Open on web", url=settings.web_url)],
+        [InlineKeyboardButton("🌐 Open dashboard", url=f"{settings.web_url}/dashboard")],
     ])
     await update.message.reply_text(
         f"👋 Hey *{_esc(display_name)}*\\! What do you want to do?",
@@ -128,14 +128,4 @@ async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "✏️ Which task do you want to edit?",
         reply_markup=InlineKeyboardMarkup(buttons),
-    )
-
-
-async def web_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await _clear_conversation_state(update.effective_chat.id)
-    await update.message.reply_text(
-        "Open NextMove in your browser:",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🌐 Open NextMove", url=settings.web_url)
-        ]]),
     )
