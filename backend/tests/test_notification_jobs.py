@@ -67,6 +67,7 @@ async def test_evening_wrapup_counts_completed():
     mock_user = MagicMock()
     mock_user.id = "user-1"
     mock_user.telegram_chat_id = 12345
+    mock_user.timezone = "UTC"
 
     with patch("app.workers.notification_jobs.SessionLocal") as mock_session_cls, \
          patch("app.workers.notification_jobs._send_telegram_message") as mock_send:

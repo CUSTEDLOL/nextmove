@@ -18,9 +18,3 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user_id: Optional[str] = None
-
-
-class GoogleExchangeRequest(BaseModel):
-    code: str
-    redirect_uri: str
-    timezone: str = "UTC"

@@ -22,8 +22,8 @@ async def test_parse_single_task():
              "effort": "high", "importance": 4, "context": "Study", "dependencies": []}
         ]
     }
-    with patch("app.services.ai_parser.openai_client") as mock_client:
-        mock_client.chat.completions.create = AsyncMock(
+    with patch("app.services.ai_parser.get_openai_client") as mock_get_client:
+        mock_get_client.return_value.chat.completions.create = AsyncMock(
             return_value=_mock_openai_response(mock_response)
         )
         result = await parse_brain_dump("Finish ML assignment by Friday", user_timezone="UTC")
@@ -44,8 +44,8 @@ async def test_parse_multiple_tasks():
              "effort": "low", "importance": 2, "context": "Study", "dependencies": []}
         ]
     }
-    with patch("app.services.ai_parser.openai_client") as mock_client:
-        mock_client.chat.completions.create = AsyncMock(
+    with patch("app.services.ai_parser.get_openai_client") as mock_get_client:
+        mock_get_client.return_value.chat.completions.create = AsyncMock(
             return_value=_mock_openai_response(mock_response)
         )
         result = await parse_brain_dump(
@@ -67,8 +67,8 @@ async def test_parse_task_no_deadline():
              "effort": "low", "importance": 1, "context": "Study", "dependencies": []}
         ]
     }
-    with patch("app.services.ai_parser.openai_client") as mock_client:
-        mock_client.chat.completions.create = AsyncMock(
+    with patch("app.services.ai_parser.get_openai_client") as mock_get_client:
+        mock_get_client.return_value.chat.completions.create = AsyncMock(
             return_value=_mock_openai_response(mock_response)
         )
         result = await parse_brain_dump("Clean up notes sometime", user_timezone="UTC")

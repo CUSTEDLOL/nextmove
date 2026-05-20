@@ -13,7 +13,7 @@ from app.models.task import Task
 from app.models.schedule import ScheduleBlock
 from app.models.user import User
 from app.schemas.tasks import TaskResponse, TodayResponse
-from app.services.matrix_scorer import score_task, TaskInput
+from app.services.matrix_scorer import score_task, TaskInput, urgency_score, importance_score
 from app.services.ai_parser import parse_brain_dump
 from app.services.schedule_runner import run_schedule_for_user
 
@@ -27,7 +27,7 @@ ACTIVE_TASK_STATUSES = ["pending", "scheduled", "in_progress"]
 # ---------------------------------------------------------------------------
 
 def apply_task_scores(task: Task, *, recompute: bool = False) -> None:
-    """Compute and set task.priority_index. Skips if already set and recompute=False."""
+    """Compute and set task.priority_index, urgency_score, importance_score."""
     if task.priority_index is not None and not recompute:
         return
     task.priority_index = score_task(TaskInput(
@@ -36,6 +36,8 @@ def apply_task_scores(task: Task, *, recompute: bool = False) -> None:
         importance=task.importance or 3,
         dependency_count=0,
     ))
+    task.urgency_score = urgency_score(task.deadline) * 10
+    task.importance_score = importance_score(task.importance or 3) * 10
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +258,11 @@ def update_task(
     for field, value in updates.items():
         setattr(task, field, value)
     apply_task_scores(task, recompute=recompute)
+    # Explicit score overrides win over recomputed values (e.g. matrix drag-and-drop).
+    if "urgency_score" in updates:
+        task.urgency_score = updates["urgency_score"]
+    if "importance_score" in updates:
+        task.importance_score = updates["importance_score"]
     db.commit()
     db.refresh(task)
     run_schedule_for_user(user, db)

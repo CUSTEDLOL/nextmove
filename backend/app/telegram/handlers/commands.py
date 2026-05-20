@@ -107,6 +107,15 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Nothing to skip right now\\.", parse_mode="MarkdownV2")
 
 
+async def web_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🌐 Open your dashboard:",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("Open NextMove", url=f"{settings.web_url}/dashboard")
+        ]])
+    )
+
+
 async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.telegram.db_helpers import list_tasks_for_chat_id
     chat_id = update.effective_chat.id

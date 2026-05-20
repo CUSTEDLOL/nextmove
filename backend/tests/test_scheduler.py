@@ -9,7 +9,7 @@ def make_slot(hour_start, hour_end, day_offset=0):
 
 
 def test_high_effort_task_goes_to_morning():
-    slots = [make_slot(9, 12), make_slot(14, 16), make_slot(20, 22)]
+    slots = [make_slot(9, 13), make_slot(14, 16), make_slot(20, 22)]  # 4h morning slot for high effort
     tasks = [TaskToSchedule(id="1", title="Hard assignment", effort="high", priority_index=8.0)]
     result = build_schedule(tasks, slots)
     assert len(result) == 1
@@ -25,7 +25,7 @@ def test_low_effort_task_avoids_morning():
 
 
 def test_multiple_tasks_all_scheduled():
-    slots = [make_slot(9, 12), make_slot(14, 16), make_slot(20, 22)]
+    slots = [make_slot(9, 13), make_slot(14, 16), make_slot(20, 22)]  # 4h morning slot for high effort
     tasks = [
         TaskToSchedule(id="1", title="Exam prep", effort="high", priority_index=9.0),
         TaskToSchedule(id="2", title="Review notes", effort="low", priority_index=3.0),

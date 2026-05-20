@@ -44,7 +44,7 @@ def patch_me(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    db_user = user
+    db_user = _load_db_user(db, user.id)
     updates = req.model_dump(exclude_unset=True)
     should_rebuild_schedule = any(
         key in updates for key in ("study_start_hour", "study_end_hour", "uses_google_calendar")

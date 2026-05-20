@@ -60,8 +60,8 @@ async def test_skip_confirm_deletes_task():
     update.effective_message = AsyncMock()
     context = MagicMock()
 
-    with patch("app.telegram.db_helpers.delete_task_for_chat_id") as mock_del, \
-         patch("app.telegram.handlers.today.today_command") as mock_today:
+    with patch("app.telegram.handlers.callbacks.delete_task_for_chat_id") as mock_del, \
+         patch("app.telegram.handlers.callbacks.today_command") as mock_today:
         mock_del.return_value = True
         mock_today.return_value = None
         from app.telegram.handlers.callbacks import handle_callback
@@ -82,8 +82,8 @@ async def test_reschedule_pick_updates_deadline():
     update.effective_message = AsyncMock()
     context = MagicMock()
 
-    with patch("app.telegram.db_helpers.reschedule_task_for_chat_id") as mock_reschedule, \
-         patch("app.telegram.handlers.today.today_command") as mock_today:
+    with patch("app.telegram.handlers.callbacks.reschedule_task_for_chat_id") as mock_reschedule, \
+         patch("app.telegram.handlers.callbacks.today_command") as mock_today:
         mock_reschedule.return_value = MagicMock(title="Essay")
         mock_today.return_value = None
         from app.telegram.handlers.callbacks import handle_callback
@@ -109,7 +109,7 @@ async def test_start_callback_marks_in_progress():
     update.effective_chat.id = 42
     context = MagicMock()
 
-    with patch("app.telegram.db_helpers.start_task_for_chat_id") as mock_start:
+    with patch("app.telegram.handlers.callbacks.start_task_for_chat_id") as mock_start:
         mock_start.return_value = MagicMock(title="Essay")
         from app.telegram.handlers.callbacks import handle_callback
         await handle_callback(update, context)
