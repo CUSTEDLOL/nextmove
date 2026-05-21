@@ -89,7 +89,7 @@ def test_get_today_tasks(client):
     assert isinstance(data["secondary"], list)
 
 
-@patch("app.routers.tasks.parse_brain_dump")
+@patch("app.services.task_service.parse_brain_dump")
 def test_brain_dump(mock_parse, client):
     from app.services.ai_parser import ParsedTask
     mock_parse.return_value = [

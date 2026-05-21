@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/* Register next/font CSS variables as Tailwind theme tokens */
+@theme inline {
+  --font-sans:    var(--font-sans);
+  --font-mono:    var(--font-mono);
+}
+
+:root {
+  /* ── Surfaces ── */
+  --background:       #FAFAF8;
+  --surface:          #F5F4F0;
+  --surface-elevated: #FFFFFF;
+  --sidebar-bg:       #EFEDE8;
+
+  /* ── Text ── */
+  --foreground:       #1A1918;
+  --muted:            #6B6660;
+  --faint:            #A8A29E;
+
+  /* ── Borders ── */
+  --border:           #E4E0DA;
+  --border-strong:    #C9C4BC;
+
+  /* ── Accent (single, used with restraint) ── */
+  --accent:           #1B6B48;
+  --accent-bright:    #10B981;
+  --accent-surface:   #EBF5EF;
+
+  /* ── Semantic ── */
+  --destructive:      #C0392B;
+
+  /* ── Layout ── */
+  --sidebar-width:    240px;
+
+  /* ── Radius scale ── */
+  --radius-sm:        6px;
+  --radius-md:        10px;
+  --radius-lg:        16px;
+
+  /* ── Shadow scale ── */
+  --shadow-card:      0 1px 3px rgba(26,25,24,0.06), 0 1px 2px rgba(26,25,24,0.04);
+  --shadow-raised:    0 4px 16px rgba(26,25,24,0.09), 0 1px 4px rgba(26,25,24,0.06);
+}
+
+/* ── Utility classes for the display font (Instrument Serif via CSS var) ── */
+.font-display {
+  font-family: var(--font-display), Georgia, serif;
+}
+.font-display-italic {
+  font-family: var(--font-display), Georgia, serif;
+  font-style: italic;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--background);
+  /* Subtle grain — imperceptible consciously, reads as crafted */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Auth inputs ── */
+.auth-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-family: var(--font-sans);
+  outline: none;
+  transition: border-color 150ms, box-shadow 150ms;
+  background: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border-strong);
+}
+.auth-input::placeholder { color: var(--faint); }
+.auth-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(27,107,72,0.12);
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar        { width: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }

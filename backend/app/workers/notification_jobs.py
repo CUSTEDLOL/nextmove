@@ -4,7 +4,6 @@ Scheduled in main.py lifespan alongside the existing pinger job.
 """
 import logging
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.database import SessionLocal
 from app.models.user import User
@@ -15,28 +14,11 @@ from app.services.notifier import (
     build_evening_wrapup,
     build_weekly_summary,
 )
+from app.services.time_utils import user_day_bounds_utc as _user_day_bounds_utc
 
 logger = logging.getLogger(__name__)
 
 _bot = None  # Set at startup via set_bot()
-
-
-def _user_day_bounds_utc(user: User, now: datetime) -> tuple[datetime, datetime]:
-    """Return (today_start, tomorrow_start) as naive UTC for the user's local timezone.
-
-    Mirrors the same helper in pinger.py so each job respects the user's local day
-    boundary rather than always using UTC midnight.
-    """
-    try:
-        tz = ZoneInfo(user.timezone or "UTC")
-    except ZoneInfoNotFoundError:
-        tz = ZoneInfo("UTC")
-    utc = ZoneInfo("UTC")
-    local_now = now.replace(tzinfo=utc).astimezone(tz)
-    local_today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_utc = local_today.astimezone(utc).replace(tzinfo=None)
-    tomorrow_utc = (local_today + timedelta(days=1)).astimezone(utc).replace(tzinfo=None)
-    return today_utc, tomorrow_utc
 
 
 def set_bot(bot) -> None:
