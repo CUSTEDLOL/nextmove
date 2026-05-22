@@ -97,6 +97,7 @@ function SortableTaskRow({
         transition,
         boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,0.13)" : "0 1px 3px rgba(0,0,0,0.06)",
         cursor: isDragging ? "grabbing" : "grab",
+        touchAction: "none",
       }}
       layout="position"
       initial={{ opacity: 0, y: 6 }}
@@ -285,7 +286,7 @@ export function MatrixGrid({ tasks, isEditing, onMoveTask, onUpdateTask, onTopTa
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
   );
 
   function handleDragStart({ active }: DragStartEvent) {
