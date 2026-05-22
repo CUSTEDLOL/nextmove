@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { TaskEditDrawer } from "@/components/tasks/TaskEditDrawer";
+import { TaskEditDrawer, TaskAddDrawer } from "@/components/tasks/TaskEditDrawer";
 import { Task } from "@/types";
 import { Check, Clock, Flame, Plus, Loader2, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,9 +25,8 @@ export default function TasksPage() {
   const [editTask, setEditTask] = useState<Task | null>(null);
   const { rebuildAndRefresh } = useSchedule();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [addDrawerOpen, setAddDrawerOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | "active" | "completed">("active");
-  const [showComposer, setShowComposer] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
 
   useEffect(() => {
     api.listTasks()
@@ -76,16 +75,13 @@ export default function TasksPage() {
     }
   }
 
-  async function handleAddTask() {
-    if (!newTitle.trim()) return;
+  async function handleAddTask(data: { title: string; effort: Task["effort"]; deadline: string | null; notes: string | null }) {
     try {
-      const created = await api.addTask({ title: newTitle.trim(), effort: "medium", importance: 3 });
+      const created = await api.addTask({ title: data.title, effort: data.effort, deadline: data.deadline, notes: data.notes, importance: 3 });
       setTasks((prev) => [mapApiTask(created as Record<string, unknown>, 0), ...prev]);
-      setNewTitle("");
-      setShowComposer(false);
       rebuildAndRefresh().catch(() => {});
     } catch {
-      // Keep the draft visible so the user can retry.
+      // silent — user can retry via add task button
     }
   }
 
@@ -96,7 +92,7 @@ export default function TasksPage() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>Tasks</h1>
           <button
-            onClick={() => setShowComposer((prev) => !prev)}
+            onClick={() => setAddDrawerOpen(true)}
             className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-[var(--radius-md)] transition-colors"
             style={{ background: "var(--accent)", color: "#ffffff" }}
           >
@@ -104,25 +100,6 @@ export default function TasksPage() {
             Add task
           </button>
         </div>
-
-        {showComposer && (
-          <div className="rounded-xl border border-[var(--border)] bg-white p-4">
-            <div className="flex gap-3">
-              <input
-                value={newTitle}
-                onChange={(event) => setNewTitle(event.target.value)}
-                placeholder="Add a new task..."
-                className="flex-1 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-gray-900 outline-none focus:border-emerald-400"
-              />
-              <button
-                onClick={handleAddTask}
-                className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Filter tabs */}
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
@@ -229,6 +206,11 @@ export default function TasksPage() {
         onClose={() => setDrawerOpen(false)}
         onSave={handleSave}
         onDelete={handleDelete}
+      />
+      <TaskAddDrawer
+        open={addDrawerOpen}
+        onClose={() => setAddDrawerOpen(false)}
+        onAdd={handleAddTask}
       />
     </AppLayout>
   );
