@@ -29,17 +29,30 @@ export const authOptions: NextAuthOptions = {
         }
         if (isRegister) body.name = credentials!.name || "Student"
 
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${endpoint}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        })
-        if (!res.ok) return null
-        const data = await res.json()
-        return {
-          id: data.user_id || credentials!.email,
-          email: credentials!.email,
-          backendToken: data.access_token,
+        const apiUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL
+        if (!apiUrl) {
+          console.error("[auth] BACKEND_URL and NEXT_PUBLIC_API_URL are both undefined")
+          return null
+        }
+        try {
+          const res = await fetch(`${apiUrl}${endpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
+          if (!res.ok) {
+            console.error("[auth] Backend returned", res.status, "for", endpoint)
+            return null
+          }
+          const data = await res.json()
+          return {
+            id: data.user_id || credentials!.email,
+            email: credentials!.email,
+            backendToken: data.access_token,
+          }
+        } catch (err) {
+          console.error("[auth] fetch failed:", err)
+          return null
         }
       },
     }),
