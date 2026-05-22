@@ -11,6 +11,7 @@ const STALE_MS = 60_000 // 60 seconds
 
 export interface Block {
   id: string
+  task_id: string | null
   task_title: string
   effort: string | null
   start_time: string

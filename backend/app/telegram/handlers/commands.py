@@ -26,13 +26,15 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     display_name = user.name or "there"
-    markup = InlineKeyboardMarkup([
+    rows = [
         [InlineKeyboardButton("🎯 Today's task", callback_data="today")],
         [InlineKeyboardButton("🧠 Brain dump", callback_data="dump")],
         [InlineKeyboardButton("✅ All tasks", callback_data="tasks")],
         [InlineKeyboardButton("✏️ Edit a task", callback_data="edit")],
-        [InlineKeyboardButton("🌐 Open dashboard", url=f"{settings.web_url}/dashboard")],
-    ])
+    ]
+    if not settings.web_url.startswith("http://localhost"):
+        rows.append([InlineKeyboardButton("🌐 Open dashboard", url=f"{settings.web_url}/dashboard")])
+    markup = InlineKeyboardMarkup(rows)
     await update.message.reply_text(
         f"👋 Hey *{_esc(display_name)}*\\! What do you want to do?",
         parse_mode="MarkdownV2",
@@ -108,11 +110,13 @@ async def skip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def web_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    is_local = settings.web_url.startswith("http://localhost")
+    markup = None if is_local else InlineKeyboardMarkup([[
+        InlineKeyboardButton("🌐 Open NextMove", url=f"{settings.web_url}/dashboard")
+    ]])
     await update.message.reply_text(
-        "🌐 Open your dashboard:",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("Open NextMove", url=f"{settings.web_url}/dashboard")
-        ]])
+        f"🌐 Dashboard: {settings.web_url}/dashboard",
+        reply_markup=markup,
     )
 
 

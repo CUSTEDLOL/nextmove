@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, Pencil, Check } from "lucide-react";
+import { Search } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { MatrixGrid } from "@/components/matrix/MatrixGrid";
 import type { MappedTask, Quadrant } from "@/components/matrix/types";
@@ -36,8 +36,6 @@ function MatrixContent() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<MatrixFilter>("all");
-  const [isEditing, setIsEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     api.listTasks()
@@ -84,12 +82,6 @@ function MatrixContent() {
     }
   }
 
-  async function handleSaveMatrix() {
-    setSaving(true);
-    await rebuildAndRefresh().catch(() => {});
-    setSaving(false);
-    setIsEditing(false);
-  }
 
   function handleMoveTask(
     taskId: string,
@@ -190,25 +182,6 @@ function MatrixContent() {
                   </button>
                 ))}
               </div>
-              <div className="h-4 w-px bg-gray-200" />
-              {isEditing ? (
-                <button
-                  onClick={handleSaveMatrix}
-                  disabled={saving}
-                  className="flex items-center gap-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 px-3 py-1.5 text-xs font-semibold text-white transition-colors"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  {saving ? "Saving…" : "Save changes"}
-                </button>
-              ) : (
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="flex items-center gap-1.5 rounded-full bg-gray-900 hover:bg-gray-700 px-3 py-1.5 text-xs font-semibold text-white transition-colors"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  Edit matrix
-                </button>
-              )}
             </div>
           </div>
 
@@ -223,7 +196,7 @@ function MatrixContent() {
           ) : (
             <MatrixGrid
               tasks={selection.visible}
-              isEditing={isEditing}
+              isEditing={false}
               onMoveTask={handleMoveTask}
               onUpdateTask={handleUpdateTask}
               onTopTaskChange={setTopFocusId}

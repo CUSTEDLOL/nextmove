@@ -30,12 +30,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             await menu_command(update, context)
             return
+        is_local = settings.web_url.startswith("http://localhost")
+        expired_markup = None if is_local else InlineKeyboardMarkup([[
+            InlineKeyboardButton("🌐 Open Settings", url=f"{settings.web_url}/settings")
+        ]])
         await update.message.reply_text(
             "❌ That link has expired\\. Go to Settings in the web app and click *Connect Telegram* again\\.",
             parse_mode="MarkdownV2",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🌐 Open Settings", url=f"{settings.web_url}/settings")
-            ]])
+            reply_markup=expired_markup,
         )
         return
 
@@ -50,11 +52,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await menu_command(update, context)
         return
 
+    is_local = settings.web_url.startswith("http://localhost")
+    welcome_markup = None if is_local else InlineKeyboardMarkup([[
+        InlineKeyboardButton("🌐 Open NextMove", url=f"{settings.web_url}/settings")
+    ]])
     await update.message.reply_text(
         "👋 Welcome to *NextMove*\\!\n\n"
         "To connect your account, open the web app and click *Connect Telegram* in Settings\\.",
         parse_mode="MarkdownV2",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🌐 Open NextMove", url=f"{settings.web_url}/settings")
-        ]])
+        reply_markup=welcome_markup,
     )

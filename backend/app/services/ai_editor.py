@@ -20,7 +20,9 @@ async def parse_edit_instruction(text: str) -> dict | None:
             {
                 "role": "system",
                 "content": (
-                    f"Today is {today}. Parse a task edit instruction into JSON.\n"
+                    f"Today is {today} (Monday=0). Parse a task edit instruction into JSON.\n"
+                    "Deadline phrases include: 'deadline is X', 'due X', 'shift to X', 'move to X', 'push to X', 'change to X'.\n"
+                    "Resolve relative dates ('monday', 'next friday', 'tomorrow', 'next week') to YYYY-MM-DD.\n"
                     "Return exactly one of these JSON shapes (no markdown, no extra text):\n"
                     '  {"field":"deadline","value":"YYYY-MM-DD"}  — if changing deadline\n'
                     '  {"field":"title","value":"new title"}       — if renaming\n'

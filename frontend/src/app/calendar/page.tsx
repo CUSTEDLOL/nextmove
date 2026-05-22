@@ -721,7 +721,10 @@ function CalendarContent() {
   }
 
   async function handleCompleteTask(blockId: string) {
-    await api.completeTask(blockId)
+    const block = blocks.find((b) => b.id === blockId)
+    const taskId = block?.task_id
+    if (!taskId) return
+    await api.completeTask(taskId)
     await rebuildAndRefresh()
   }
 

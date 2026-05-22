@@ -117,7 +117,7 @@ function TaskEditDrawerInner({ task, onClose, onSave, onDelete }: Omit<TaskEditD
 export function TaskEditDrawer({ task, open, onClose, onSave, onDelete }: TaskEditDrawerProps) {
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-[420px] flex flex-col gap-0 p-0">
+      <SheetContent side="bottom" className="rounded-t-2xl flex flex-col gap-0 p-0 max-h-[90vh]">
         {task && (
           <TaskEditDrawerInner
             key={task.id}

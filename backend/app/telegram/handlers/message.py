@@ -59,31 +59,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if pending_edit is not None:
         from app.telegram.db_helpers import apply_task_edit, clear_pending_edit
         from app.services.ai_editor import parse_edit_instruction
-        try:
-            edit = await parse_edit_instruction(text)
-            if edit is None:
-                await update.message.reply_text(
-                    "🤔 Couldn't understand that edit\\.\n"
-                    "Try: _'deadline is Friday'_, _'rename to X'_, or _'delete'_",
-                    parse_mode="MarkdownV2",
-                )
-                return
-            ok = await apply_task_edit(chat_id, str(pending_edit), edit)
-            if ok:
-                if edit["field"] == "delete":
-                    msg = "🗑️ Task deleted\\."
-                elif edit["field"] == "deadline":
-                    msg = f"✅ Deadline updated to *{_esc(edit['value'])}*\\."
-                else:
-                    msg = f"✅ Renamed to *{_esc(edit['value'])}*\\."
-                await update.message.reply_text(msg, parse_mode="MarkdownV2")
+        edit = await parse_edit_instruction(text)
+        if edit is None:
+            # Keep pending_edit so the user can try again with different wording
+            await update.message.reply_text(
+                "🤔 Couldn't understand that edit\\.\n"
+                "Try: _'deadline is Friday'_, _'rename to X'_, or _'delete'_",
+                parse_mode="MarkdownV2",
+            )
+            return
+        await clear_pending_edit(chat_id)
+        ok = await apply_task_edit(chat_id, str(pending_edit), edit)
+        if ok:
+            if edit["field"] == "delete":
+                msg = "🗑️ Task deleted\\."
+            elif edit["field"] == "deadline":
+                msg = f"✅ Deadline updated to *{_esc(edit['value'])}*\\."
             else:
-                await update.message.reply_text(
-                    "⚠️ Couldn't apply that edit\\. The task may have been deleted\\.",
-                    parse_mode="MarkdownV2",
-                )
-        finally:
-            await clear_pending_edit(chat_id)
+                msg = f"✅ Renamed to *{_esc(edit['value'])}*\\."
+            await update.message.reply_text(msg, parse_mode="MarkdownV2")
+        else:
+            await update.message.reply_text(
+                "⚠️ Couldn't apply that edit\\. The task may have been deleted\\.",
+                parse_mode="MarkdownV2",
+            )
         return
 
     # Priority 3: intent classification
