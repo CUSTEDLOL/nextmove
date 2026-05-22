@@ -12,7 +12,6 @@ type SettingsUser = {
   study_start_hour: number;
   study_end_hour: number;
   uses_google_calendar: boolean;
-  google_calendar_connected: boolean;
 };
 
 export default function SettingsPage() {
@@ -53,22 +52,6 @@ export default function SettingsPage() {
     } finally {
       setTelegramLoading(false);
     }
-  }
-
-  async function toggleCalendarConnection() {
-    if (!settings) return;
-    const next = settings.google_calendar_connected
-      ? await api.disconnectCalendar()
-      : await api.connectCalendar();
-    setSettings((prev) =>
-      prev
-        ? {
-            ...prev,
-            uses_google_calendar: next.uses_google_calendar,
-            google_calendar_connected: next.google_calendar_connected,
-          }
-        : prev
-    );
   }
 
   return (
@@ -144,39 +127,6 @@ export default function SettingsPage() {
                   />
                 </label>
               </div>
-            </div>
-
-            <div className="rounded-xl border border-[var(--border)] bg-white p-5 space-y-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Google Calendar</p>
-                  <p className="text-xs text-gray-500 mt-1">Use your Google calendar to calculate free slots and rebuild the day.</p>
-                </div>
-                <span className={`rounded-full px-2 py-1 text-xs font-medium ${
-                  settings.google_calendar_connected ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"
-                }`}>
-                  {settings.google_calendar_connected ? "Connected" : "Not connected"}
-                </span>
-              </div>
-              <label className="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Use Google availability</p>
-                  <p className="text-xs text-gray-500 mt-1">When enabled, schedule rebuilds look at Google Calendar first.</p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.uses_google_calendar}
-                  onChange={(event) =>
-                    setSettings((prev) => prev ? { ...prev, uses_google_calendar: event.target.checked } : prev)
-                  }
-                />
-              </label>
-              <button
-                onClick={toggleCalendarConnection}
-                className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                {settings.google_calendar_connected ? "Disconnect Google Calendar" : "Connect saved Google account"}
-              </button>
             </div>
 
             <div className="rounded-xl border border-[var(--border)] bg-white p-5 space-y-4">
