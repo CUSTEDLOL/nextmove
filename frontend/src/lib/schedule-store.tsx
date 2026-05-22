@@ -51,6 +51,7 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
       ])
       const eventBlocks = (events as Array<Record<string, unknown>>).map((e) => ({
         id: `event-${String(e.id)}`,
+        task_id: null,
         task_title: String(e.title),
         effort: null,
         start_time: String(e.start_time),
